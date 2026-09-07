@@ -24,7 +24,7 @@ import {
   getLocalRooms,
   getLocalUser,
 } from '../services';
-import { testSupabaseConnection } from '../lib/supabaseClient';
+import { supabase, isSupabaseConfigured, testSupabaseConnection } from '../lib/supabaseClient';
 
 
 export type ActivePage =
@@ -291,12 +291,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .getCurrentUser()
       .then((user) => {
         if (user) {
+          const hash = window.location.hash || '';
+          const search = window.location.search || '';
+          const isRecovery =
+            hash.includes('type=recovery') ||
+            search.includes('type=recovery') ||
+            window.location.pathname === '/reset-password';
+
           setCurrentUser(user);
-          setIsLoggedIn(true);
+          if (!isRecovery) {
+            setIsLoggedIn(true);
+          }
         }
       })
       .catch((err) => console.warn('[AppContext] Failed to load user:', err));
-  }, []);
+
+    let authSub: { unsubscribe: () => void } | null = null;
+    if (isSupabaseConfigured) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          navigate('/reset-password', { replace: true });
+        } else if (event === 'SIGNED_OUT') {
+          setIsLoggedIn(false);
+        }
+      });
+      authSub = subscription;
+    }
+
+    return () => {
+      authSub?.unsubscribe();
+    };
+  }, [navigate]);
 
 
   // Auth actions

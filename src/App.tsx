@@ -18,11 +18,64 @@ import { AuthModal } from './components/modals/AuthModal';
 import { Toast } from './components/common/Toast';
 import { Heart } from 'lucide-react';
 
+import { useNavigate } from 'react-router-dom';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
+
 const ScrollToTop: React.FC = () => {
   const { pathname } = useLocation();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+  return null;
+};
+
+/**
+ * Global handler that catches Supabase Password Recovery redirects
+ * regardless of whether Supabase bounced to Site URL (/) or another page.
+ */
+const AuthRecoveryHandler: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // 1. Immediate URL check for recovery token in hash or query parameters
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const isRecoveryUrl = hash.includes('type=recovery') || search.includes('type=recovery');
+
+    if (isRecoveryUrl) {
+      console.log('[AuthRecoveryHandler] Detected recovery token in URL');
+      // Reset any previous expiry flags so new reset session starts fresh
+      sessionStorage.removeItem('tulonely_reset_password_completed');
+      sessionStorage.setItem('tulonely_reset_password_start_time', Date.now().toString());
+
+      if (location.pathname !== '/reset-password') {
+        navigate('/reset-password' + hash, { replace: true });
+        return;
+      }
+    }
+
+    // 2. Global listener for Supabase PASSWORD_RECOVERY event
+    if (isSupabaseConfigured) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, _session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          console.log('[AuthRecoveryHandler] Received PASSWORD_RECOVERY event -> navigating to /reset-password');
+          sessionStorage.removeItem('tulonely_reset_password_completed');
+          sessionStorage.setItem('tulonely_reset_password_start_time', Date.now().toString());
+          if (location.pathname !== '/reset-password') {
+            navigate('/reset-password', { replace: true });
+          }
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [navigate, location.pathname]);
+
   return null;
 };
 
@@ -32,6 +85,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFBF7] text-[#2D2D2D] font-prompt relative overflow-x-hidden selection:bg-[#8B1D1D] selection:text-white">
       <ScrollToTop />
+      <AuthRecoveryHandler />
 
       {/* Frosted Glass Ambient Backdrop Glow Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">

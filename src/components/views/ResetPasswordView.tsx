@@ -46,19 +46,31 @@ export const ResetPasswordView: React.FC = () => {
 
   // 1. Manage 10-Minute Expiry Timer & Check Already-Completed Status
   useEffect(() => {
-    // Check if password reset was already completed in this session
-    const isCompleted = sessionStorage.getItem(COMPLETED_KEY);
-    if (isCompleted === 'true') {
-      setIsExpired(true);
-      setExpireReason('completed');
-      return;
+    // Check if this is a fresh arrival from an email recovery link
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const isFreshRecovery = hash.includes('type=recovery') || search.includes('type=recovery');
+
+    if (isFreshRecovery) {
+      sessionStorage.removeItem(COMPLETED_KEY);
+      sessionStorage.setItem(STORAGE_KEY, Date.now().toString());
+      setIsExpired(false);
+      setExpireReason(null);
+    } else {
+      // Check if password reset was already completed in this session
+      const isCompleted = sessionStorage.getItem(COMPLETED_KEY);
+      if (isCompleted === 'true') {
+        setIsExpired(true);
+        setExpireReason('completed');
+        return;
+      }
     }
 
     // Retrieve or initialize start time
     const storedStartTime = sessionStorage.getItem(STORAGE_KEY);
     let startTime: number;
 
-    if (storedStartTime) {
+    if (storedStartTime && !isFreshRecovery) {
       startTime = parseInt(storedStartTime, 10);
     } else {
       startTime = Date.now();
