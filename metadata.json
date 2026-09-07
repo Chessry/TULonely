@@ -1,0 +1,6 @@
+{
+  "name": "TUlonely — ไม่ต้องเหงาอีกต่อไป",
+  "description": "แพลตฟอร์มรวมกิจกรรมและหาเพื่อนสำหรับนักศึกษามหาวิทยาลัยธรรมศาสตร์ หาเพื่อนไปทำกิจกรรม กินข้าว เล่นกีฬา ติวหนังสือ และบันเทิงไปด้วยกัน",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
