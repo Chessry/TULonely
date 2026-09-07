@@ -114,7 +114,7 @@ export const ProfileView: React.FC = () => {
   // Edit form state
   const [name, setName] = useState(currentUser.name);
   const [fullName, setFullName] = useState(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
-  const [bio, setBio] = useState(currentUser.bio);
+  const [bio, setBio] = useState(currentUser.bio || '');
   const [faculty, setFaculty] = useState(currentUser.faculty);
   const [campus, setCampus] = useState(currentUser.campus);
   const [avatar, setAvatar] = useState(currentUser.avatar);
@@ -130,7 +130,7 @@ export const ProfileView: React.FC = () => {
   React.useEffect(() => {
     setName(currentUser.name);
     setFullName(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
-    setBio(currentUser.bio);
+    setBio(currentUser.bio || '');
     setFaculty(currentUser.faculty);
     setCampus(currentUser.campus);
     setAvatar(currentUser.avatar);
@@ -196,7 +196,7 @@ export const ProfileView: React.FC = () => {
   const handleCancelEdit = () => {
     setName(currentUser.name);
     setFullName(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
-    setBio(currentUser.bio);
+    setBio(currentUser.bio || '');
     setFaculty(currentUser.faculty);
     setCampus(currentUser.campus);
     setAvatar(currentUser.avatar);

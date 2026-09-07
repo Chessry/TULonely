@@ -796,5 +796,27 @@ export const CATEGORY_METADATA: Record<
     borderAccent: 'border-[#8B5CF6]',
     popularTags: ['#เล่นเกม', '#BoardGame', '#ดูหนัง', '#Karaoke', '#Concert', '#Zpell', '#ฟิวเจอร์', '#บอร์ดเกม'],
     description: 'หาเพื่อนเล่นบอร์ดเกม ร้องเกะ ไปดูหนังที่ Zpell หรือแฮงเอาท์หลังเลิกเรียน'
+  },
+  activity: {
+    name: 'กิจกรรมมหาลัย',
+    englishName: 'activity',
+    tagline: 'ไปเปิดโลกกิจกรรมใหม่ ๆ กัน 🎉',
+    icon: '🏛️',
+    color: '#8B1D2C',
+    bgBadge: 'bg-[#8B1D2C]/10 text-[#8B1D2C]',
+    borderAccent: 'border-[#8B1D2C]',
+    popularTags: ['#Freshy', '#TUGames', '#OpenHouse', '#คอนเสิร์ต', '#เพื่อนใหม่', '#จิตอาสา'],
+    description: 'กิจกรรมอย่างเป็นทางการของมหาวิทยาลัยธรรมศาสตร์ ชมรม และงานเทศกาล สร้างห้องหาเพื่อนไปร่วมงานด้วยกัน'
+  },
+  restaurants: {
+    name: 'กินข้าว',
+    englishName: 'restaurants',
+    tagline: 'หาเพื่อนกินข้าว ไม่ต้องกินคนเดียว 🍜',
+    icon: '🍜',
+    color: '#E04B5A',
+    bgBadge: 'bg-[#E04B5A]/10 text-[#E04B5A]',
+    borderAccent: 'border-[#E04B5A]',
+    popularTags: ['#อาหารตามสั่ง', '#ปิ้งย่าง', '#ชาบู', '#เมนูเส้น', '#ของหวาน', '#USquare', '#เชียงราก', '#โรงอาหารSC'],
+    description: 'หาเพื่อนแชร์โต๊ะกินข้าว ตะลุยร้านอร่อยรอบมหาลัย TU Dome, U-Square หรือโรงอาหาร SC'
   }
 };

@@ -1,103 +1,100 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { TU_FACULTIES } from '../../data/mockData';
 import {
   X,
   ShieldCheck,
   Sparkles,
   Lock,
-  Flame,
   ArrowRight,
   Mail,
-  Check,
   AlertCircle,
   Loader2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ArrowLeft,
+  CheckCircle2,
 } from 'lucide-react';
+import { authService } from '../../services/authService';
 
-const PRESET_AVATARS = [
-  {
-    id: 'av-1',
-    name: 'สไตล์ 1',
-    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'av-2',
-    name: 'สไตล์ 2',
-    url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'av-3',
-    name: 'สไตล์ 3',
-    url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'av-4',
-    name: 'สไตล์ 4',
-    url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'av-5',
-    name: 'สไตล์ 5',
-    url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'av-6',
-    name: 'สไตล์ 6',
-    url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150&auto=format&fit=crop&q=80',
-  },
-];
-
-const POPULAR_INTEREST_TAGS = [
-  '#สุกี้ตี๋น้อย',
-  '#บอร์ดเกม',
-  '#วิ่งGym4',
-  '#อ่านหนังสือป๋วย',
-  '#Freshy',
-  '#หารค่าส่ง',
-  '#ดูหนังZpell',
-  '#แบดมินตัน',
-  '#โรงอาหารSC',
-  '#Calculus',
-];
+const DEFAULT_AVATAR =
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
 
 interface AuthErrors {
   studentId?: string;
+  fullName?: string;
   email?: string;
+  password?: string;
   name?: string;
-  loginIdentifier?: string;
+  loginEmail?: string;
+  loginPassword?: string;
 }
 
 export const AuthModal: React.FC = () => {
-  const { isAuthModalOpen, setIsAuthModalOpen, login, register } = useApp();
+  const { isAuthModalOpen, setIsAuthModalOpen, login, register, showToast } = useApp();
 
-  const [mode, setMode] = useState<'register' | 'login' | 'demo'>('register');
+  const [mode, setMode] = useState<'register' | 'login' | 'forgot'>('register');
 
   // Register Form State
   const [regStudentId, setRegStudentId] = useState('');
-  const [regEmail, setRegEmail] = useState('');
+  const [regFullName, setRegFullName] = useState('');
   const [regName, setRegName] = useState('');
-  const [regFaculty, setRegFaculty] = useState(TU_FACULTIES[0]);
-  const [regYear, setRegYear] = useState('ปี 1 (Freshy)');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   const [regBio, setRegBio] = useState('');
-  const [regAvatar, setRegAvatar] = useState(PRESET_AVATARS[0].url);
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([
-    '#Freshy',
-    '#สุกี้ตี๋น้อย',
-  ]);
 
   // Login Form State
-  const [loginStudentId, setLoginStudentId] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Forgot Password State
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotSuccessEmail, setForgotSuccessEmail] = useState('');
+  const [forgotError, setForgotError] = useState<string | null>(null);
 
   // Validation & Loading state
   const [errors, setErrors] = useState<AuthErrors>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    const email = forgotEmail.trim();
+    if (!email) {
+      setForgotError('กรุณากรอกอีเมลของคุณ');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setForgotError('รูปแบบอีเมลไม่ถูกต้อง กรุณากรอกอีเมลที่ถูกต้อง');
+      return;
+    }
+
+    setIsForgotSubmitting(true);
+    try {
+      await authService.sendPasswordResetEmail(email);
+      setForgotSuccess(true);
+      setForgotSuccessEmail(email);
+      showToast('ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลเรียบร้อยแล้ว');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถส่งลิงก์รีเซ็ตรหัสผ่านได้';
+      setForgotError(msg);
+    } finally {
+      setIsForgotSubmitting(false);
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
     if (!isAuthModalOpen) {
       setErrors({});
       setIsSubmitting(false);
+      setServerError(null);
       return;
     }
 
@@ -113,14 +110,6 @@ export const AuthModal: React.FC = () => {
 
   if (!isAuthModalOpen) return null;
 
-  const toggleInterestTag = (tag: string) => {
-    if (selectedInterests.includes(tag)) {
-      setSelectedInterests((prev) => prev.filter((t) => t !== tag));
-    } else {
-      setSelectedInterests((prev) => [...prev, tag]);
-    }
-  };
-
   const validateRegister = (): boolean => {
     const newErrors: AuthErrors = {};
 
@@ -132,7 +121,15 @@ export const AuthModal: React.FC = () => {
       newErrors.studentId = 'รหัสนักศึกษาต้องเป็นตัวเลข 10 หลักพอดี (เช่น 6609651234)';
     }
 
-    // 2. Email check
+    // 2. Full Name check
+    const cleanedFullName = regFullName.trim();
+    if (!cleanedFullName) {
+      newErrors.fullName = 'กรุณากรอกชื่อจริง นามสกุล';
+    } else if (cleanedFullName.length < 4) {
+      newErrors.fullName = 'กรุณากรอกชื่อและนามสกุลให้ครบถ้วน';
+    }
+
+    // 3. Email check
     const cleanedEmail = regEmail.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!cleanedEmail) {
@@ -141,12 +138,11 @@ export const AuthModal: React.FC = () => {
       newErrors.email = 'รูปแบบอีเมลไม่ถูกต้อง (เช่น example@email.com)';
     }
 
-    // 3. Name check
-    const cleanedName = regName.trim();
-    if (!cleanedName) {
-      newErrors.name = 'กรุณากรอกชื่อเล่นหรือชื่อที่ต้องการให้เพื่อนเรียก';
-    } else if (cleanedName.length < 2) {
-      newErrors.name = 'ชื่อควรมีความยาวอย่างน้อย 2 ตัวอักษร';
+    // 4. Password check
+    if (!regPassword) {
+      newErrors.password = 'กรุณากำหนดรหัสผ่าน';
+    } else if (regPassword.length < 6) {
+      newErrors.password = 'รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร';
     }
 
     setErrors(newErrors);
@@ -155,6 +151,7 @@ export const AuthModal: React.FC = () => {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setServerError(null);
 
     if (!validateRegister()) {
       return;
@@ -162,21 +159,30 @@ export const AuthModal: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const trimmedFullName = regFullName.trim();
+      // If nickname is not provided, use real_name (full name)
+      const displayName = regName.trim()
+        ? regName.trim()
+        : trimmedFullName;
 
-      register({
-        name: regName.trim(),
+      await register({
+        fullName: trimmedFullName,
+        name: displayName,
         studentId: regStudentId.trim(),
         email: regEmail.trim(),
-        faculty: regFaculty,
-        year: regYear,
+        password: regPassword,
+        faculty: 'มหาวิทยาลัยธรรมศาสตร์',
+        year: `ปี ${Math.max(1, new Date().getFullYear() + 543 - (2500 + parseInt(regStudentId.slice(0, 2), 10)))}`,
         campus: 'ศูนย์รังสิต',
-        bio: regBio.trim() || 'เด็ก มธ. ศูนย์รังสิต ยินดีที่ได้รู้จักทุกคนครับ/ค่ะ 👋',
-        avatar: regAvatar,
-        interests: selectedInterests.length > 0 ? selectedInterests : ['#Freshy', '#ศูนย์รังสิต'],
+        bio: regBio.trim() ? regBio.trim() : null,
+        avatar: DEFAULT_AVATAR,
+        interests: ['#หาเพื่อน', '#เด็กหอรังสิต', '#ธรรมศาสตร์'],
       });
 
       setIsAuthModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลงทะเบียน';
+      setServerError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -184,17 +190,19 @@ export const AuthModal: React.FC = () => {
 
   const validateLogin = (): boolean => {
     const newErrors: AuthErrors = {};
-    const input = loginStudentId.trim();
+    const input = loginEmail.trim();
 
     if (!input) {
-      newErrors.loginIdentifier = 'กรุณากรอกรหัสนักศึกษา (10 หลัก) หรือ อีเมล';
-    } else if (input.includes('@')) {
+      newErrors.loginEmail = 'กรุณากรอก Email';
+    } else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(input)) {
-        newErrors.loginIdentifier = 'รูปแบบอีเมลไม่ถูกต้อง';
+        newErrors.loginEmail = 'รูปแบบ Email ไม่ถูกต้อง';
       }
-    } else if (!/^\d{10}$/.test(input)) {
-      newErrors.loginIdentifier = 'รหัสนักศึกษาต้องเป็นตัวเลข 10 หลัก (เช่น 6609651234)';
+    }
+
+    if (!loginPassword) {
+      newErrors.loginPassword = 'กรุณากรอก Password';
     }
 
     setErrors(newErrors);
@@ -203,6 +211,7 @@ export const AuthModal: React.FC = () => {
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setServerError(null);
 
     if (!validateLogin()) {
       return;
@@ -210,48 +219,16 @@ export const AuthModal: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const input = loginStudentId.trim();
-      const isEmail = input.includes('@');
-
-      login({
-        studentId: isEmail ? '650965xxxx' : input,
-        email: isEmail ? input : `${input}@dome.tu.ac.th`,
+      await login({
+        email: loginEmail.trim(),
+        password: loginPassword,
         name: 'นักศึกษา มธ.',
       });
 
       setIsAuthModalOpen(false);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleQuickDemoSelect = async (
-    demoName: string,
-    demoId: string,
-    demoFaculty: string,
-    demoYear: string,
-    demoBio: string,
-    demoAvatar: string,
-    demoInterests: string[]
-  ) => {
-    setIsSubmitting(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      register({
-        name: demoName,
-        studentId: demoId,
-        email: `${demoName.toLowerCase()}@dome.tu.ac.th`,
-        faculty: demoFaculty,
-        year: demoYear,
-        campus: 'ศูนย์รังสิต',
-        bio: demoBio,
-        avatar: demoAvatar,
-        interests: demoInterests,
-      });
-      setIsAuthModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ';
+      setServerError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -266,7 +243,7 @@ export const AuthModal: React.FC = () => {
       }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto"
     >
-      <div className="relative w-full max-w-xl bg-[#FDFBF7]/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/80 overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-xl bg-[#FDFBF7]/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/80 overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150 font-prompt">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#8B1D1D] to-[#6D0E1C] text-white px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -294,74 +271,96 @@ export const AuthModal: React.FC = () => {
         </div>
 
         {/* Navigation Mode Switcher Tabs */}
-        <div className="flex border-b border-white/80 bg-white/40 p-1.5 gap-1.5">
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => {
-              setMode('register');
-              setErrors({});
-            }}
-            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              mode === 'register'
-                ? 'bg-[#8B1D1D] text-white shadow-md'
-                : 'text-[#555] hover:bg-white/60'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>ลงทะเบียนเข้าใช้</span>
-          </button>
+        {mode === 'forgot' ? (
+          <div className="flex items-center justify-between border-b border-white/80 bg-white/40 p-2 px-4">
+            <button
+              type="button"
+              disabled={isSubmitting || isForgotSubmitting}
+              onClick={() => {
+                setMode('login');
+                setServerError(null);
+                setForgotError(null);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8B1D1D] hover:text-[#6D0E1C] bg-white/70 hover:bg-white backdrop-blur-md px-3 py-1.5 rounded-full border border-white/90 shadow-2xs transition-all cursor-pointer font-kanit"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>ย้อนกลับไปหน้าเข้าสู่ระบบ</span>
+            </button>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#2D2D2D] font-kanit">
+              <KeyRound className="w-3.5 h-3.5 text-[#F27D26]" />
+              <span>รีเซ็ตรหัสผ่าน</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex border-b border-white/80 bg-white/40 p-1.5 gap-1.5">
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                setMode('register');
+                setErrors({});
+                setServerError(null);
+                setForgotError(null);
+              }}
+              className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold font-kanit transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                mode === 'register'
+                  ? 'bg-[#8B1D1D] text-white shadow-md'
+                  : 'text-[#555] hover:bg-white/60'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>ลงทะเบียนเข้าใช้</span>
+            </button>
 
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => {
-              setMode('login');
-              setErrors({});
-            }}
-            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              mode === 'login'
-                ? 'bg-[#8B1D1D] text-white shadow-md'
-                : 'text-[#555] hover:bg-white/60'
-            }`}
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>เข้าสู่ระบบ</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => {
-              setMode('demo');
-              setErrors({});
-            }}
-            className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              mode === 'demo'
-                ? 'bg-[#8B1D1D] text-white shadow-md'
-                : 'text-[#F27D26] bg-amber-500/10 hover:bg-amber-500/20'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5 text-[#F27D26]" />
-            <span>บัญชีทดสอบด่วน</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                setMode('login');
+                setErrors({});
+                setServerError(null);
+                setForgotError(null);
+              }}
+              className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold font-kanit transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-[#8B1D1D] text-white shadow-md'
+                  : 'text-[#555] hover:bg-white/60'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>เข้าสู่ระบบ</span>
+            </button>
+          </div>
+        )}
 
         <div className="p-6 max-h-[75vh] overflow-y-auto space-y-4">
           <div className="bg-[#8B1D1D]/5 border border-[#8B1D1D]/15 rounded-2xl p-3.5 flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 text-[#8B1D1D] shrink-0 mt-0.5" />
             <p className="text-xs text-[#8B1D1D] leading-tight">
-              ยืนยันตัวตนด้วยรหัสนักศึกษา 10 หลักผ่านฐานข้อมูลมหาวิทยาลัย โดยสามารถใช้อีเมลใดก็ได้ในการลงทะเบียน
+              ยืนยันตัวตนด้วยรหัสนักศึกษา 10 หลักผ่านระบบ TUlonely มธ. ศูนย์รังสิต ข้อมูลรหัสผ่านจะถูกจัดเก็บอย่างปลอดภัย
             </p>
           </div>
 
+          {/* Server Error Alert Banner */}
+          {serverError && (
+            <div className="p-3.5 bg-rose-50/95 border border-rose-200/80 rounded-2xl flex items-start gap-2.5 text-rose-700 animate-in fade-in duration-200">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+              <div className="text-xs">
+                <p className="font-bold font-kanit text-rose-800">
+                  {mode === 'register' ? 'การลงทะเบียนไม่สำเร็จ' : 'เข้าสู่ระบบไม่สำเร็จ'}
+                </p>
+                <p className="mt-0.5 leading-relaxed text-rose-700">{serverError}</p>
+              </div>
+            </div>
+          )}
+
           {/* Mode 1: Register */}
           {mode === 'register' && (
-            <form onSubmit={handleRegisterSubmit} className="space-y-4">
+            <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Student ID */}
                 <div>
-                  <label className="block text-xs font-bold text-[#333] mb-1">
+                  <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
                     รหัสนักศึกษา (10 หลัก) <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -381,25 +380,19 @@ export const AuthModal: React.FC = () => {
                         : 'border-white/90 focus:ring-[#8B1D1D]'
                     }`}
                   />
-                  {errors.studentId ? (
+                  {errors.studentId && (
                     <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>{errors.studentId}</span>
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-[#777] mt-0.5">
-                      {regStudentId.length}/10 หลัก (ตรวจกับฐานข้อมูลนักศึกษา)
                     </p>
                   )}
                 </div>
 
                 {/* Email */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-[#333]">
-                      อีเมล <span className="text-rose-500">*</span>
-                    </label>
-                  </div>
+                  <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                    อีเมล <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="email"
                     disabled={isSubmitting}
@@ -408,176 +401,137 @@ export const AuthModal: React.FC = () => {
                       setRegEmail(e.target.value);
                       if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
                     }}
-                    placeholder="เช่น example@gmail.com หรือ hotmail, outlook"
+                    placeholder="เช่น example@gmail.com หรือ hotmail"
                     className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
                       errors.email
                         ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
                         : 'border-white/90 focus:ring-[#8B1D1D]'
                     }`}
                   />
-                  {errors.email ? (
+                  {errors.email && (
                     <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>{errors.email}</span>
                     </p>
-                  ) : (
-                    <p className="text-[10px] text-[#777] mt-0.5">
-                      รองรับทุกผู้ให้บริการอีเมล (Gmail, Hotmail, Outlook ฯลฯ)
-                    </p>
                   )}
                 </div>
               </div>
 
-              {/* Name & Year */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-[#333] mb-1">
-                    ชื่อเล่น / ชื่อที่ต้องการแสดง <span className="text-rose-500">*</span>
-                  </label>
+              {/* Password */}
+              <div>
+                <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                  Password <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
                   <input
-                    type="text"
+                    type={showRegPassword ? 'text' : 'password'}
                     disabled={isSubmitting}
-                    value={regName}
+                    value={regPassword}
                     onChange={(e) => {
-                      setRegName(e.target.value);
-                      if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
+                      setRegPassword(e.target.value);
+                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
                     }}
-                    placeholder="เช่น ฟ้าใส, นวมินทร์, Noah"
-                    className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
-                      errors.name
+                    placeholder="กำหนดรหัสผ่านอย่างน้อย 6 ตัวอักษร"
+                    className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl pl-3 pr-10 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
+                      errors.password
                         ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
                         : 'border-white/90 focus:ring-[#8B1D1D]'
                     }`}
                   />
-                  {errors.name && (
-                    <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{errors.name}</span>
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#333] mb-1">ชั้นปี</label>
-                  <select
-                    value={regYear}
-                    disabled={isSubmitting}
-                    onChange={(e) => setRegYear(e.target.value)}
-                    className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs"
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-[#333] p-1 cursor-pointer"
+                    title={showRegPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
                   >
-                    <option value="ปี 1 (Freshy)">ปี 1 (Freshy น้องใหม่)</option>
-                    <option value="ปี 2">ปี 2</option>
-                    <option value="ปี 3">ปี 3</option>
-                    <option value="ปี 4">ปี 4</option>
-                    <option value="ปริญญาโท / เอก">ปริญญาโท / เอก</option>
-                  </select>
+                    {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
+                {errors.password && (
+                  <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{errors.password}</span>
+                  </p>
+                )}
               </div>
 
-              {/* Faculty */}
+              {/* Full Name */}
               <div>
-                <label className="block text-xs font-bold text-[#333] mb-1">คณะ</label>
-                <select
-                  value={regFaculty}
-                  disabled={isSubmitting}
-                  onChange={(e) => setRegFaculty(e.target.value)}
-                  className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs"
-                >
-                  {TU_FACULTIES.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Bio */}
-              <div>
-                <label className="block text-xs font-bold text-[#333] mb-1">คำแนะนำตัวสั้น ๆ</label>
+                <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                  ชื่อจริง นามสกุล <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   disabled={isSubmitting}
-                  value={regBio}
-                  onChange={(e) => setRegBio(e.target.value)}
-                  placeholder="เช่น หาเพื่อนกินข้าว ติวสอบ หรือเล่นบอร์ดเกม ทักได้เลย"
-                  className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs"
+                  value={regFullName}
+                  onChange={(e) => {
+                    setRegFullName(e.target.value);
+                    if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
+                  }}
+                  placeholder="เช่น สมชาย รักธรรมศาสตร์"
+                  className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
+                    errors.fullName
+                      ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
+                      : 'border-white/90 focus:ring-[#8B1D1D]'
+                  }`}
+                />
+                {errors.fullName && (
+                  <p className="text-[11px] text-rose-500 mt-1 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{errors.fullName}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Nickname / Display Name (Optional) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-[#333] font-kanit">
+                    ชื่อเล่น / ชื่อที่ต้องการแสดง
+                  </label>
+                  <span className="text-[11px] text-[#888]">(ไม่บังคับ)</span>
+                </div>
+                <input
+                  type="text"
+                  disabled={isSubmitting}
+                  value={regName}
+                  onChange={(e) => {
+                    setRegName(e.target.value);
+                    if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  placeholder="เช่น ชาย, สมชาย (หากไม่กรอกจะใช้ชื่อจริง)"
+                  className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs focus:ring-[#8B1D1D]"
                 />
               </div>
 
-              {/* Avatar Selector */}
+              {/* Bio (Optional) */}
               <div>
-                <label className="block text-xs font-bold text-[#333] mb-1.5">
-                  เลือกรูปโปรไฟล์ (Avatar)
-                </label>
-                <div className="grid grid-cols-6 gap-2">
-                  {PRESET_AVATARS.map((av) => {
-                    const isSelected = regAvatar === av.url;
-                    return (
-                      <button
-                        key={av.id}
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={() => setRegAvatar(av.url)}
-                        className={`relative rounded-xl p-0.5 border-2 transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-[#8B1D1D] bg-white scale-105 shadow-md ring-2 ring-[#8B1D1D]/30'
-                            : 'border-white/80 bg-white/40 hover:border-white'
-                        }`}
-                      >
-                        <img
-                          src={av.url}
-                          alt={av.name}
-                          className="w-full h-11 rounded-lg object-cover"
-                        />
-                        {isSelected && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#8B1D1D] text-white flex items-center justify-center shadow-xs">
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-[#333] font-kanit">
+                    คำแนะนำตัวสั้น ๆ (Bio)
+                  </label>
+                  <span className="text-[11px] text-[#888]">(ไม่บังคับ)</span>
                 </div>
-              </div>
-
-              {/* Tags */}
-              <div>
-                <label className="block text-xs font-bold text-[#333] mb-1">
-                  กิจกรรมที่ชอบ (เลือกได้หลายข้อ)
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {POPULAR_INTEREST_TAGS.map((tag) => {
-                    const isSelected = selectedInterests.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        disabled={isSubmitting}
-                        onClick={() => toggleInterestTag(tag)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#8B1D1D] text-white shadow-xs'
-                            : 'bg-white/60 text-[#555] hover:bg-white border border-white/80'
-                        }`}
-                      >
-                        {isSelected ? '✓ ' : '+ '}
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
+                <textarea
+                  rows={2}
+                  disabled={isSubmitting}
+                  value={regBio}
+                  onChange={(e) => setRegBio(e.target.value)}
+                  placeholder="เช่น หาเพื่อนกินข้าว ติวสอบ หรือเล่นบอร์ดเกมครับ 👋"
+                  className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs resize-none"
+                />
               </div>
 
               {/* Submit button with loader */}
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3 bg-[#8B1D1D] hover:bg-[#6D0E1C] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer mt-2"
+                className="w-full py-3 bg-[#8B1D1D] hover:bg-[#6D0E1C] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-xs font-kanit rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer mt-2"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>กำลังบันทึกข้อมูลและเข้าสู่ระบบ...</span>
+                    <span>กำลังตรวจสอบข้อมูลกับระบบ มธ... ⏳</span>
                   </>
                 ) : (
                   <>
@@ -593,58 +547,103 @@ export const AuthModal: React.FC = () => {
           {mode === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#333] mb-1">
-                  รหัสนักศึกษา (10 หลัก) หรือ อีเมล <span className="text-rose-500">*</span>
+                <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                  Email <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-[#888] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="text"
+                    type="email"
                     disabled={isSubmitting}
-                    value={loginStudentId}
+                    value={loginEmail}
                     onChange={(e) => {
-                      setLoginStudentId(e.target.value);
-                      if (errors.loginIdentifier) {
-                        setErrors((prev) => ({ ...prev, loginIdentifier: undefined }));
+                      setLoginEmail(e.target.value);
+                      if (errors.loginEmail) {
+                        setErrors((prev) => ({ ...prev, loginEmail: undefined }));
                       }
                     }}
-                    placeholder="เช่น 6609651234 หรือ example@gmail.com"
+                    placeholder="เช่น example@gmail.com หรือ student@dome.tu.ac.th"
                     className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
-                      errors.loginIdentifier
+                      errors.loginEmail
                         ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
                         : 'border-white/90 focus:ring-[#8B1D1D]'
                     }`}
+                    required
                   />
                 </div>
-                {errors.loginIdentifier && (
+                {errors.loginEmail && (
                   <p className="text-[11px] text-rose-500 mt-1.5 flex items-center gap-1 font-medium">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{errors.loginIdentifier}</span>
+                    <span>{errors.loginEmail}</span>
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#333] mb-1">
-                  รหัสผ่าน / PIN (ไม่บังคับในโหมดทดสอบ)
+                <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                  Password <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#888] absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
+                    type={showLoginPassword ? 'text' : 'password'}
                     disabled={isSubmitting}
                     value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl pl-9 pr-3.5 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs"
+                    onChange={(e) => {
+                      setLoginPassword(e.target.value);
+                      if (errors.loginPassword) {
+                        setErrors((prev) => ({ ...prev, loginPassword: undefined }));
+                      }
+                    }}
+                    placeholder="กรอกรหัสผ่านของคุณ"
+                    className={`w-full bg-white/70 backdrop-blur-xs border rounded-xl pl-9 pr-10 py-2.5 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 shadow-2xs transition-colors ${
+                      errors.loginPassword
+                        ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
+                        : 'border-white/90 focus:ring-[#8B1D1D]'
+                    }`}
+                    required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#888] hover:text-[#333] p-1 cursor-pointer"
+                    title={showLoginPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {errors.loginPassword && (
+                  <p className="text-[11px] text-rose-500 mt-1.5 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{errors.loginPassword}</span>
+                  </p>
+                )}
+
+                {/* Forgot Password Button */}
+                <div className="flex justify-end pt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setErrors({});
+                      setServerError(null);
+                      setForgotError(null);
+                      setForgotSuccess(false);
+                      if (loginEmail.trim()) {
+                        setForgotEmail(loginEmail.trim());
+                      }
+                    }}
+                    className="text-xs font-semibold text-[#8B1D1D] hover:text-[#6D0E1C] hover:underline transition-colors cursor-pointer"
+                  >
+                    ลืมรหัสผ่าน?
+                  </button>
                 </div>
               </div>
 
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3 bg-[#8B1D1D] hover:bg-[#6D0E1C] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-xs rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 bg-[#8B1D1D] hover:bg-[#6D0E1C] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-xs font-kanit rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>
@@ -661,116 +660,115 @@ export const AuthModal: React.FC = () => {
             </form>
           )}
 
-          {/* Mode 3 / Demo Switcher */}
-          {mode === 'demo' && (
-            <div className="space-y-3">
-              <p className="text-xs font-bold text-[#555]">
-                เลือกบัญชีนักศึกษาตัวอย่าง เพื่อทดลองเข้าร่วมห้องและแชทได้ทันที 1-Click:
-              </p>
-
-              <div className="space-y-2.5">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() =>
-                    handleQuickDemoSelect(
-                      'น้องนวมินทร์ (Freshy)',
-                      '6702651234',
-                      'พาณิชย์และการบัญชี (TBS)',
-                      'ปี 1 (Freshy)',
-                      'น้องใหม่ TBS หาเพื่อนติวบัญชีและไปกินสุกี้ตี๋น้อยครับ ✨',
-                      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150',
-                      ['#Freshy', '#TBS', '#สุกี้ตี๋น้อย']
-                    )
-                  }
-                  className="w-full p-3 bg-white/80 hover:bg-white disabled:opacity-60 rounded-2xl border border-white/90 text-left shadow-2xs hover:shadow-md transition-all flex items-center gap-3 cursor-pointer group"
-                >
-                  <img
-                    src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150"
-                    alt="Nawamin"
-                    className="w-10 h-10 rounded-full object-cover border border-white shadow-2xs"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-[#2D2D2D] group-hover:text-[#8B1D1D]">
-                      น้องนวมินทร์ (Freshy) 🎓
-                    </p>
-                    <p className="text-[11px] text-[#666]">รหัส 6702651234 • บริหาร TBS มธ. ศูนย์รังสิต</p>
-                  </div>
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-[#8B1D1D]" />
-                  ) : (
-                    <span className="text-xs font-bold text-[#8B1D1D]">เลือก ➔</span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() =>
-                    handleQuickDemoSelect(
-                      'Noah',
-                      '6509654321',
-                      'วิศวกรรมศาสตร์ (TSE)',
-                      'ปี 3',
-                      'หาเพื่อนกินข้าว เล่นบอร์ดเกม และไปวิ่งที่สระว่ายน้ำครับ 👋',
-                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-                      ['#บอร์ดเกม', '#อาหารตามสั่ง', '#วิ่งออกกำลัง']
-                    )
-                  }
-                  className="w-full p-3 bg-white/80 hover:bg-white disabled:opacity-60 rounded-2xl border border-white/90 text-left shadow-2xs hover:shadow-md transition-all flex items-center gap-3 cursor-pointer group"
-                >
-                  <img
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
-                    alt="Noah"
-                    className="w-10 h-10 rounded-full object-cover border border-white shadow-2xs"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-[#2D2D2D] group-hover:text-[#8B1D1D]">
-                      Noah 🛠️
-                    </p>
-                    <p className="text-[11px] text-[#666]">รหัส 6509654321 • วิศวะ TSE มธ. ศูนย์รังสิต</p>
-                  </div>
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-[#8B1D1D]" />
-                  ) : (
-                    <span className="text-xs font-bold text-[#8B1D1D]">เลือก ➔</span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() =>
-                    handleQuickDemoSelect(
-                      'ฟ้าใส (Fah)',
-                      '6604659876',
-                      'ศิลปศาสตร์ (LArts)',
-                      'ปี 2',
-                      'เด็กศิลปศาสตร์ชอบดูหนัง นั่งคาเฟ่ และไปกินชาบู ☕',
-                      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-                      ['#ศิลปศาสตร์', '#ชาบูหม่าล่า', '#ดูหนังZpell']
-                    )
-                  }
-                  className="w-full p-3 bg-white/80 hover:bg-white disabled:opacity-60 rounded-2xl border border-white/90 text-left shadow-2xs hover:shadow-md transition-all flex items-center gap-3 cursor-pointer group"
-                >
-                  <img
-                    src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150"
-                    alt="Fah"
-                    className="w-10 h-10 rounded-full object-cover border border-white shadow-2xs"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-[#2D2D2D] group-hover:text-[#8B1D1D]">
-                      ฟ้าใส ☕
-                    </p>
-                    <p className="text-[11px] text-[#666]">รหัส 6604659876 • ศิลปศาสตร์ มธ. ศูนย์รังสิต</p>
-                  </div>
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-[#8B1D1D]" />
-                  ) : (
-                    <span className="text-xs font-bold text-[#8B1D1D]">เลือก ➔</span>
-                  )}
-                </button>
+          {/* Mode 3: Forgot Password Form */}
+          {mode === 'forgot' && (
+            <div className="space-y-4">
+              <div className="bg-[#8B1D1D]/5 border border-[#8B1D1D]/15 rounded-2xl p-3.5 flex items-start gap-2.5">
+                <KeyRound className="w-4 h-4 text-[#8B1D1D] shrink-0 mt-0.5" />
+                <p className="text-xs text-[#8B1D1D] leading-tight">
+                  กรอกอีเมลของคุณเพื่อรับ Magic Link สำหรับกู้คืนและตั้งรหัสผ่านใหม่
+                </p>
               </div>
+
+              {forgotSuccess ? (
+                <div className="bg-white/70 backdrop-blur-md rounded-2xl p-5 border border-white/90 shadow-sm text-center space-y-3">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center text-emerald-600">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-bold font-kanit text-[#2D2D2D]">
+                    ส่งลิงก์รีเซ็ตรหัสผ่านแล้ว! 📨
+                  </h3>
+                  <p className="text-xs text-[#555] leading-relaxed">
+                    ระบบได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปยัง <span className="font-semibold text-[#8B1D1D]">{forgotSuccessEmail}</span> แล้ว กรุณาตรวจสอบในกล่องจดหมายของคุณ (รวมทั้งโฟลเดอร์ Junk/Spam)
+                  </p>
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-left text-[11px] text-[#7A4B00]">
+                    💡 คลิกที่ลิงก์ในอีเมลเพื่อเข้าสู่หน้าตั้งรหัสผ่านใหม่
+                  </div>
+                  <div className="pt-2 flex gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('login');
+                        setForgotSuccess(false);
+                      }}
+                      className="py-2.5 px-4 bg-[#8B1D1D] hover:bg-[#6D0E1C] text-white font-bold text-xs font-kanit rounded-xl shadow-md transition-all active:scale-98 cursor-pointer"
+                    >
+                      กลับไปหน้าเข้าสู่ระบบ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForgotSuccess(false)}
+                      className="py-2.5 px-3 bg-white hover:bg-neutral-50 text-[#555] font-bold text-xs font-kanit rounded-xl border border-neutral-200 transition-all cursor-pointer"
+                    >
+                      ส่งใหม่อีกครั้ง
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotSubmit} className="space-y-4">
+                  {forgotError && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl p-3 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span className="text-[11px] text-rose-600">{forgotError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#333] mb-1 font-kanit">
+                      อีเมลที่ใช้ลงทะเบียน <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-[#888] absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="email"
+                        disabled={isForgotSubmitting}
+                        value={forgotEmail}
+                        onChange={(e) => {
+                          setForgotEmail(e.target.value);
+                          if (forgotError) setForgotError(null);
+                        }}
+                        placeholder="เช่น student@dome.tu.ac.th หรือ email@gmail.com"
+                        className="w-full bg-white/70 backdrop-blur-xs border border-white/90 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] shadow-2xs"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isForgotSubmitting}
+                    className="w-full py-3 bg-gradient-to-r from-[#8B1D1D] to-[#F27D26] hover:from-[#6D0E1C] hover:to-[#d96716] disabled:opacity-75 disabled:cursor-not-allowed text-white font-bold text-xs font-kanit rounded-2xl shadow-md hover:shadow-lg transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isForgotSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>กำลังส่งลิงก์...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>ส่งลิงก์รีเซ็ตรหัสผ่าน 🚀</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+
+                  <div className="text-center pt-1">
+                    <p className="text-xs text-[#666]">
+                      จำรหัสผ่านได้แล้ว?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('login');
+                          setForgotError(null);
+                        }}
+                        className="text-[#8B1D1D] font-bold hover:underline cursor-pointer"
+                      >
+                        เข้าสู่ระบบที่นี่
+                      </button>
+                    </p>
+                  </div>
+                </form>
+              )}
             </div>
           )}
         </div>

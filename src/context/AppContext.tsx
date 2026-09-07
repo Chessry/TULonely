@@ -24,6 +24,8 @@ import {
   getLocalRooms,
   getLocalUser,
 } from '../services';
+import { testSupabaseConnection } from '../lib/supabaseClient';
+
 
 export type ActivePage =
   | 'home'
@@ -39,8 +41,9 @@ interface AppContextType {
   // Auth state
   isLoggedIn: boolean;
   setIsLoggedIn: (logged: boolean) => void;
-  login: (credentials?: { studentId?: string; email?: string; name?: string }) => void;
-  register: (userProfile: Partial<UserProfile>) => void;
+  login: (credentials?: { studentId?: string; email?: string; password?: string; name?: string }) => Promise<UserProfile>;
+  register: (userProfile: Partial<UserProfile> & { password?: string }) => Promise<UserProfile>;
+
   logout: () => void;
 
   // Navigation & view states
@@ -89,7 +92,7 @@ interface AppContextType {
   setIsAuthModalOpen: (open: boolean) => void;
 
   // Actions
-  createRoom: (newRoomData: Omit<Room, 'id' | 'createdAt' | 'status' | 'chatMessages' | 'viewsCount' | 'creator' | 'participants'>) => string;
+  createRoom: (newRoomData: Omit<Room, 'id' | 'createdAt' | 'status' | 'chatMessages' | 'viewsCount' | 'creator' | 'participants'>) => Promise<string>;
   deleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string) => boolean;
   leaveRoom: (roomId: string) => void;
@@ -271,6 +274,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Load fresh data from services (Backend or local fallback)
   useEffect(() => {
+    // Test Supabase connection status
+    testSupabaseConnection().then((status) => {
+      if (status.connected) {
+        console.log('⚡ [Supabase] Connected successfully:', status.message);
+      } else if (status.configured) {
+        console.warn('⚠️ [Supabase] Configured but test check failed:', status.message);
+      } else {
+        console.info('ℹ️ [Supabase] Note: Operating in local/mock mode until VITE_SUPABASE_ANON_KEY is set in .env');
+      }
+    });
+
     refreshRooms();
 
     authService
@@ -284,49 +298,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .catch((err) => console.warn('[AppContext] Failed to load user:', err));
   }, []);
 
+
   // Auth actions
-  const login = (credentials?: { studentId?: string; email?: string; name?: string }) => {
-    setIsLoggedIn(true);
-    authService
-      .login(credentials)
-      .then(({ user }) => {
-        setCurrentUser(user);
-      })
-      .catch(() => {
-        if (credentials) {
-          setCurrentUser((prev) => ({
-            ...prev,
-            name: credentials.name || prev.name,
-            studentId: credentials.studentId || prev.studentId,
-            email: credentials.email || prev.email,
-          }));
-        }
-      });
-    setActivePage('home');
-    showToast(`ยินดีต้อนรับกลับสู่ TUlonely 🎉`);
+  const login = async (credentials?: { studentId?: string; email?: string; password?: string; name?: string }): Promise<UserProfile> => {
+    try {
+      const { user } = await authService.login(credentials);
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+      setActivePage('home');
+      showToast(`ยินดีต้อนรับกลับสู่ TUlonely 🎉`);
+      return user;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ';
+      console.error('[AppContext] Login failed:', err);
+      showToast(`❌ ${errMsg}`);
+      throw err;
+    }
   };
 
-  const register = (userProfile: Partial<UserProfile>) => {
-    setIsLoggedIn(true);
-    authService
-      .register(userProfile)
-      .then(({ user }) => {
-        setCurrentUser(user);
-      })
-      .catch(() => {
-        const newProfile: UserProfile = {
-          ...currentUser,
-          ...userProfile,
-          id: userProfile.id || `user-${Date.now()}`,
-          name: userProfile.name || 'นักศึกษา มธ.',
-          studentId: userProfile.studentId || '660965xxxx',
-          faculty: userProfile.faculty || 'วิศวกรรมศาสตร์ (TSE)',
-          campus: 'ศูนย์รังสิต',
-        };
-        setCurrentUser(newProfile);
-      });
-    setActivePage('home');
-    showToast(`ยินดีต้อนรับเพื่อนใหม่ ${userProfile.name || 'นักศึกษา มธ.'} เข้าสู่ TUlonely! 🥳✨`);
+  const register = async (userProfile: Partial<UserProfile> & { password?: string }): Promise<UserProfile> => {
+    try {
+      const { user } = await authService.register(userProfile);
+      setCurrentUser(user);
+      setIsLoggedIn(true);
+      setActivePage('home');
+      showToast(`ยินดีต้อนรับเพื่อนใหม่ ${user.name || 'นักศึกษา มธ.'} เข้าสู่ TUlonely! 🥳✨`);
+      return user;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการลงทะเบียน';
+      console.error('[AppContext] Registration failed:', err);
+      showToast(`❌ ${errMsg}`);
+      throw err;
+    }
   };
 
   const logout = () => {
@@ -355,76 +358,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
   // Actions
-  const createRoom = (
+  const createRoom = async (
     newRoomData: Omit<
       Room,
       'id' | 'createdAt' | 'status' | 'chatMessages' | 'viewsCount' | 'creator' | 'participants'
     >
-  ): string => {
+  ): Promise<string> => {
     if (!isLoggedIn) {
       setIsAuthModalOpen(true);
       showToast('กรุณาลงทะเบียนหรือเข้าสู่ระบบก่อนสร้างห้องหาเพื่อน 🎓');
       return '';
     }
 
-    const newId = `room-${Date.now()}`;
-    const initialParticipants = [
-      {
-        id: currentUser.id,
-        name: currentUser.name,
-        studentId: currentUser.studentId,
-        faculty: currentUser.faculty,
-        avatar: currentUser.avatar,
-        joinedAt: 'เมื่อสักครู่',
-        isHost: true,
-      },
-    ];
+    try {
+      // Direct Supabase persistence with roomService
+      const created = await roomService.createRoom(newRoomData, currentUser);
 
-    const initialChatMessage: ChatMessage = {
-      id: `msg-init-${Date.now()}`,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      text: `สวัสดีทุกคน! ห้อง "${newRoomData.title}" เปิดรับเพื่อนแล้วครับ ทักทายพูดคุยกันได้เลย ✨`,
-      timestamp: 'เมื่อสักครู่',
-    };
+      setRooms((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
 
-    const newRoom: Room = {
-      ...newRoomData,
-      id: newId,
-      creator: {
-        id: currentUser.id,
-        name: currentUser.name,
-        studentId: currentUser.studentId,
-        faculty: currentUser.faculty,
-        avatar: currentUser.avatar,
-        bio: currentUser.bio,
-      },
-      participants: initialParticipants,
-      createdAt: new Date().toISOString(),
-      viewsCount: 1,
-      chatMessages: [initialChatMessage],
-      status: 'open',
-    };
+      // Update user's favorite or created rooms list
+      setCurrentUser((prev) => ({
+        ...prev,
+        favoriteRooms: [...prev.favoriteRooms, created.id],
+      }));
 
-    // Calculate actual status
-    newRoom.status = calculateRoomStatus(newRoom);
+      showToast('สร้างห้องสำเร็จและบันทึกข้อมูลเข้าสู่ Supabase เรียบร้อยแล้ว! 🎉');
+      return created.id;
+    } catch (err) {
+      console.error('[AppContext] createRoom service error:', err);
 
-    setRooms((prev) => [newRoom, ...prev]);
-
-    // Update user's favorite or created rooms list
-    setCurrentUser((prev) => ({
-      ...prev,
-      favoriteRooms: [...prev.favoriteRooms, newId],
-    }));
-
-    // Persist with roomService
-    roomService
-      .createRoom(newRoomData, currentUser)
-      .catch((err) => console.warn('[AppContext] createRoom service error:', err));
-
-    showToast('สร้างห้องสำเร็จแล้ว! 🎉 ชวนเพื่อนมาร่วมกลุ่มกันเลย');
-    return newId;
+      // Fallback local creation if an unexpected crash occurs
+      const newId = `room-${Date.now()}`;
+      const fallbackRoom: Room = {
+        ...newRoomData,
+        id: newId,
+        creator: {
+          id: currentUser.id,
+          name: currentUser.name,
+          studentId: currentUser.studentId,
+          faculty: currentUser.faculty,
+          avatar: currentUser.avatar,
+          bio: currentUser.bio,
+        },
+        participants: [
+          {
+            id: currentUser.id,
+            name: currentUser.name,
+            studentId: currentUser.studentId,
+            faculty: currentUser.faculty,
+            avatar: currentUser.avatar,
+            joinedAt: 'เมื่อสักครู่',
+            isHost: true,
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        viewsCount: 1,
+        chatMessages: [],
+        status: 'open',
+      };
+      setRooms((prev) => [fallbackRoom, ...prev]);
+      showToast('สร้างห้องเรียบร้อย (บันทึกข้อมูลในเครื่อง) ✨');
+      return newId;
+    }
   };
 
   const deleteRoom = (roomId: string) => {

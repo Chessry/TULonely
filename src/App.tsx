@@ -10,6 +10,7 @@ import { FindFriendsView } from './components/views/FindFriendsView';
 import { RoomDetailView } from './components/views/RoomDetailView';
 import { ProfileView } from './components/views/ProfileView';
 import { OnboardingAuthView } from './components/views/OnboardingAuthView';
+import { ResetPasswordView } from './components/views/ResetPasswordView';
 import { CreateRoomModal } from './components/modals/CreateRoomModal';
 import { NotificationDrawer } from './components/modals/NotificationDrawer';
 import { ReportModal } from './components/modals/ReportModal';
@@ -76,6 +77,8 @@ const AppContent: React.FC = () => {
           <Route path="/auth" element={<OnboardingAuthView />} />
           <Route path="/login" element={<OnboardingAuthView />} />
           <Route path="/register" element={<OnboardingAuthView />} />
+          <Route path="/forgot-password" element={<OnboardingAuthView defaultMode="forgot" />} />
+          <Route path="/reset-password" element={<ResetPasswordView />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
