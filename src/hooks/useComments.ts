@@ -110,6 +110,20 @@ export const useComments = ({
     }
   };
 
+  // 5. Edit: แก้ไขคอมเมนต์
+  const editComment = async (commentId: number, newContent: string) => {
+    try {
+      const success = await commentService.updateComment(commentId, newContent);
+      if (success) {
+        await fetchComments();
+      }
+      return success;
+    } catch (err) {
+      console.error('[useComments] editComment error:', err);
+      return false;
+    }
+  };
+
   return {
     comments,
     isLoading,
@@ -117,6 +131,7 @@ export const useComments = ({
     error,
     addComment,
     removeComment,
+    editComment,
     refreshComments: fetchComments,
   };
 };

@@ -13,9 +13,12 @@ export interface SendMessagePayload {
   sticker?: string;
   replyToId?: string;
   replyToName?: string;
+  parentId?: number | null;
+  commentId?: number;
   replyTo?: {
     id: string;
     name: string;
+    parentId?: number | null;
   };
 }
 
@@ -54,102 +57,187 @@ export const chatService = {
    * Send a new message or comment in room
    */
   async sendChatMessage(roomId: string, payload: SendMessagePayload): Promise<ChatMessage> {
+    const rooms = getLocalRooms();
+    const roomIndex = rooms.findIndex((r) => isRoomMatch(r.id, roomId));
+    const targetRoomId = roomIndex !== -1 ? rooms[roomIndex].id : roomId;
+
+    // 1. Calculate parent_id as numeric int8 (or null)
+    let parentIdNum: number | null = null;
+    if (payload.parentId !== undefined && payload.parentId !== null) {
+      const parsed = Number(payload.parentId);
+      if (!isNaN(parsed) && parsed > 0) parentIdNum = parsed;
+    } else if (payload.replyTo?.parentId !== undefined && payload.replyTo?.parentId !== null) {
+      const parsed = Number(payload.replyTo.parentId);
+      if (!isNaN(parsed) && parsed > 0) parentIdNum = parsed;
+    } else if (payload.replyTo?.id || payload.replyToId) {
+      const raw = (payload.replyTo?.id || payload.replyToId || '').replace(/^comment-/, '');
+      const parsed = Number(raw);
+      if (!isNaN(parsed) && parsed > 0 && !(payload.replyTo?.id || payload.replyToId || '').startsWith('msg-')) {
+        parentIdNum = parsed;
+      }
+    }
+
+    // 2. Sync to Supabase 'comments' table
+    let insertedCommentId: number | undefined;
+    if (isSupabaseConfigured) {
+      try {
+        const boardIdNum = targetRoomId.startsWith('board-')
+          ? Number(targetRoomId.replace('board-', ''))
+          : Number(targetRoomId);
+
+        if (!isNaN(boardIdNum)) {
+          let authUserId = payload.senderId;
+          try {
+            const {
+              data: { user: sbUser },
+            } = await supabase.auth.getUser();
+            if (sbUser?.id) authUserId = sbUser.id;
+          } catch {
+            // ignore
+          }
+
+          if (
+            authUserId &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              authUserId
+            )
+          ) {
+            const insertData = {
+              board_id: boardIdNum,
+              user_id: authUserId,
+              content: payload.text.trim(),
+              parent_id: parentIdNum,
+              is_updated: false,
+            };
+
+            const { data: inserted, error: insertError } = await supabase
+              .from('comments')
+              .insert(insertData)
+              .select('id')
+              .single();
+
+            if (!insertError && inserted?.id) {
+              insertedCommentId = inserted.id;
+            } else if (insertError) {
+              console.error('[chatService] Supabase comments insert error:', insertError.message);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[chatService] Comments table insert note:', err);
+      }
+    }
+
+    // 3. Build ChatMessage object with definitive IDs
+    const finalMsgId = insertedCommentId ? `comment-${insertedCommentId}` : `msg-${Date.now()}`;
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: finalMsgId,
+      commentId: insertedCommentId,
+      parentId: parentIdNum,
       senderId: payload.senderId,
       senderName: payload.senderName,
       senderAvatar: payload.senderAvatar,
-      text: payload.text,
+      senderFaculty: payload.senderFaculty,
+      text: payload.text.trim(),
       timestamp: 'เมื่อสักครู่',
       sticker: payload.sticker,
-      replyToId: payload.replyTo?.id,
+      replyToId: payload.replyTo?.id || (parentIdNum ? `comment-${parentIdNum}` : undefined),
       replyToName: payload.replyTo?.name,
       likedBy: [],
       likesCount: 0,
+      isUpdated: false,
     };
 
-    // Client/Local first for instantaneous UI update
-    const rooms = getLocalRooms();
-    const roomIndex = rooms.findIndex((r) => isRoomMatch(r.id, roomId));
-
-    if (roomIndex !== -1 || !isSupabaseConfigured) {
-      const room = roomIndex !== -1 ? rooms[roomIndex] : null;
-      const targetRoomId = room ? room.id : roomId;
-      const currentMessages = room?.chatMessages || [];
+    // 4. Update local cache
+    if (roomIndex !== -1 && rooms[roomIndex]) {
+      const room = rooms[roomIndex];
+      const currentMessages = room.chatMessages || [];
       const updatedMessages = [...currentMessages, newMsg];
 
-      if (roomIndex !== -1 && room) {
-        rooms[roomIndex] = {
-          ...room,
-          chatMessages: updatedMessages,
-        };
-        saveLocalRooms(rooms);
-      }
+      rooms[roomIndex] = {
+        ...room,
+        chatMessages: updatedMessages,
+      };
+      saveLocalRooms(rooms);
       saveRoomExtra(targetRoomId, { chatMessages: updatedMessages });
       if (roomId !== targetRoomId) {
         saveRoomExtra(roomId, { chatMessages: updatedMessages });
       }
-
-      // Sync to Supabase 'comments' table in background
-      if (isSupabaseConfigured) {
-        (async () => {
-          try {
-            const boardIdNum = targetRoomId.startsWith('board-')
-              ? Number(targetRoomId.replace('board-', ''))
-              : Number(targetRoomId);
-
-            if (!isNaN(boardIdNum)) {
-              let authUserId = payload.senderId;
-              try {
-                const {
-                  data: { user: sbUser },
-                } = await supabase.auth.getUser();
-                if (sbUser?.id) authUserId = sbUser.id;
-              } catch {
-                // ignore
-              }
-
-              if (
-                authUserId &&
-                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-                  authUserId
-                )
-              ) {
-                let parentIdNum: number | null = null;
-                if (payload.replyTo?.id) {
-                  const cleaned = payload.replyTo.id.replace('comment-', '');
-                  if (!isNaN(Number(cleaned))) parentIdNum = Number(cleaned);
-                }
-
-                await supabase.from('comments').insert({
-                  board_id: boardIdNum,
-                  user_id: authUserId,
-                  content: payload.text,
-                  parent_id: parentIdNum,
-                });
-              }
-            }
-          } catch (err) {
-            console.warn('[chatService] Comments table insert note:', err);
-          }
-        })();
-      }
-
-      // Broadcast live to all other accounts online
-      realtimeService.broadcastNewComment(targetRoomId, newMsg);
-      if (roomId !== targetRoomId) {
-        realtimeService.broadcastNewComment(roomId, newMsg);
-      }
-
-      return newMsg;
     }
 
-    // Backend API fallback
-    return apiClient.post<ChatMessage>(`/rooms/${roomId}/messages`, payload, () => newMsg);
+    // 5. Broadcast live to all other accounts online
+    realtimeService.broadcastNewComment(targetRoomId, newMsg);
+    if (roomId !== targetRoomId) {
+      realtimeService.broadcastNewComment(roomId, newMsg);
+    }
+
+    return newMsg;
   },
 
   async sendMessage(roomId: string, payload: SendMessagePayload): Promise<ChatMessage> {
     return this.sendChatMessage(roomId, payload);
+  },
+
+  /**
+   * Edit an existing comment/message
+   */
+  async editChatMessage(roomId: string, messageId: string, newText: string): Promise<boolean> {
+    const rooms = getLocalRooms();
+    const roomIndex = rooms.findIndex((r) => isRoomMatch(r.id, roomId));
+    if (roomIndex === -1) return false;
+
+    const room = rooms[roomIndex];
+    const targetRoomId = room.id;
+
+    const updatedMessages = (room.chatMessages || []).map((msg) => {
+      if (msg.id === messageId) {
+        return {
+          ...msg,
+          text: newText.trim(),
+          isUpdated: true,
+        };
+      }
+      return msg;
+    });
+
+    rooms[roomIndex] = {
+      ...room,
+      chatMessages: updatedMessages,
+    };
+    saveLocalRooms(rooms);
+    saveRoomExtra(targetRoomId, { chatMessages: updatedMessages });
+    if (roomId !== targetRoomId) {
+      saveRoomExtra(roomId, { chatMessages: updatedMessages });
+    }
+
+    // Sync to Supabase 'comments' table
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const raw = messageId.replace(/^comment-/, '');
+          const commentIdNum = Number(raw);
+          if (!isNaN(commentIdNum) && !messageId.startsWith('msg-')) {
+            await supabase
+              .from('comments')
+              .update({
+                content: newText.trim(),
+                is_updated: true,
+              })
+              .eq('id', commentIdNum);
+          }
+        } catch (err) {
+          console.warn('[chatService] Edit message sync error:', err);
+        }
+      })();
+    }
+
+    // Broadcast edit to all online accounts
+    realtimeService.broadcastEditComment(targetRoomId, messageId, newText.trim());
+    if (roomId !== targetRoomId) {
+      realtimeService.broadcastEditComment(roomId, messageId, newText.trim());
+    }
+
+    return true;
   },
 
   /**
@@ -162,10 +250,18 @@ export const chatService = {
 
     const room = rooms[roomIndex];
     const targetRoomId = room.id;
+
+    const raw = messageId.replace(/^comment-/, '');
+    const commentIdNum = Number(raw);
+    const validNum = !isNaN(commentIdNum) && !messageId.startsWith('msg-') ? commentIdNum : null;
+
     // Filter out the deleted comment and any nested replies replying to it
-    const updatedMessages = (room.chatMessages || []).filter(
-      (msg) => msg.id !== messageId && msg.replyToId !== messageId
-    );
+    const updatedMessages = (room.chatMessages || []).filter((msg) => {
+      if (msg.id === messageId) return false;
+      if (msg.replyToId === messageId) return false;
+      if (validNum && (msg.parentId === validNum || msg.replyToId === `comment-${validNum}`)) return false;
+      return true;
+    });
 
     rooms[roomIndex] = {
       ...room,
@@ -177,15 +273,13 @@ export const chatService = {
       saveRoomExtra(roomId, { chatMessages: updatedMessages });
     }
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && validNum) {
       (async () => {
         try {
-          if (messageId.startsWith('comment-')) {
-            const commentIdNum = Number(messageId.replace('comment-', ''));
-            if (!isNaN(commentIdNum)) {
-              await supabase.from('comments').delete().eq('id', commentIdNum);
-            }
-          }
+          // Delete child replies first
+          await supabase.from('comments').delete().eq('parent_id', validNum);
+          // Delete parent comment
+          await supabase.from('comments').delete().eq('id', validNum);
         } catch (err) {
           console.warn('[chatService] Delete message sync error:', err);
         }

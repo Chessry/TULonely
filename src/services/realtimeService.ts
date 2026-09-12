@@ -4,6 +4,7 @@ import { ChatMessage, Participant, Room } from '../types';
 export interface RealtimeEventHandlers {
   onNewComment?: (roomId: string, message: ChatMessage) => void;
   onDeleteComment?: (roomId: string, messageId: string) => void;
+  onEditComment?: (roomId: string, messageId: string, newText: string) => void;
   onToggleLike?: (
     roomId: string,
     messageId: string,
@@ -94,6 +95,11 @@ class RealtimeService {
         .on('broadcast', { event: 'delete_comment' }, ({ payload }: { payload: any }) => {
           if (payload?.roomId && payload?.messageId) {
             this.handlers.onDeleteComment?.(payload.roomId, payload.messageId);
+          }
+        })
+        .on('broadcast', { event: 'edit_comment' }, ({ payload }: { payload: any }) => {
+          if (payload?.roomId && payload?.messageId && payload?.newText !== undefined) {
+            this.handlers.onEditComment?.(payload.roomId, payload.messageId, payload.newText);
           }
         })
         .on('broadcast', { event: 'toggle_like' }, ({ payload }: { payload: any }) => {
@@ -201,6 +207,11 @@ class RealtimeService {
           this.handlers.onDeleteComment?.(payload.roomId, payload.messageId);
         }
         break;
+      case 'edit_comment':
+        if (payload?.roomId && payload?.messageId && payload?.newText !== undefined) {
+          this.handlers.onEditComment?.(payload.roomId, payload.messageId, payload.newText);
+        }
+        break;
       case 'toggle_like':
         if (payload?.roomId && payload?.messageId) {
           this.handlers.onToggleLike?.(
@@ -282,6 +293,13 @@ class RealtimeService {
    */
   public broadcastDeleteComment(roomId: string, messageId: string) {
     this.sendBroadcast('delete_comment', { roomId, messageId });
+  }
+
+  /**
+   * Broadcast edited comment to all online accounts
+   */
+  public broadcastEditComment(roomId: string, messageId: string, newText: string) {
+    this.sendBroadcast('edit_comment', { roomId, messageId, newText });
   }
 
   /**

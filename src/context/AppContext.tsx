@@ -108,8 +108,9 @@ interface AppContextType {
   deleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string) => boolean;
   leaveRoom: (roomId: string) => void;
-  sendChatMessage: (roomId: string, text: string, sticker?: string, replyTo?: { id: string; name: string }) => void;
+  sendChatMessage: (roomId: string, text: string, sticker?: string, replyTo?: { id: string; name: string; parentId?: number | null }) => void;
   deleteChatMessage: (roomId: string, messageId: string) => void;
+  editChatMessage: (roomId: string, messageId: string, newText: string) => Promise<void>;
   toggleCommentLike: (roomId: string, commentId: string) => void;
   toggleFavoriteRoom: (roomId: string) => void;
   toggleFavoriteActivity: (actId: string) => void;
@@ -394,6 +395,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const curMessages = r.chatMessages || [];
               const updated = curMessages.filter(
                 (m) => m.id !== messageId && m.replyToId !== messageId
+              );
+              saveRoomExtra(r.id, { chatMessages: updated });
+              return { ...r, chatMessages: updated };
+            }
+            return r;
+          })
+        );
+      },
+      onEditComment: (roomId, messageId, newText) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (isRoomMatch(r.id, roomId)) {
+              const curMessages = r.chatMessages || [];
+              const updated = curMessages.map((m) =>
+                m.id === messageId ? { ...m, text: newText, isUpdated: true } : m
               );
               saveRoomExtra(r.id, { chatMessages: updated });
               return { ...r, chatMessages: updated };
@@ -839,11 +855,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('ออกจากห้องเรียบร้อยแล้ว');
   };
 
-  const sendChatMessage = (
+  const sendChatMessage = async (
     roomId: string,
     text: string,
     sticker?: string,
-    replyTo?: { id: string; name: string }
+    replyTo?: { id: string; name: string; parentId?: number | null }
   ) => {
     if (!isLoggedIn) {
       setIsAuthModalOpen(true);
@@ -853,36 +869,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!text.trim() && !sticker) return;
 
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      senderAvatar: currentUser.avatar,
-      senderFaculty: currentUser.faculty,
-      text: text.trim(),
-      timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.',
-      sticker,
-      replyToId: replyTo?.id,
-      replyToName: replyTo?.name,
-      likesCount: 0,
-      likedBy: [],
-    };
-
-    setRooms((prev) =>
-      prev.map((r) => {
-        if (r.id === roomId) {
-          return {
-            ...r,
-            chatMessages: [...r.chatMessages, newMsg],
-          };
-        }
-        return r;
-      })
-    );
-
-    // Call chatService
-    chatService
-      .sendMessage(roomId, {
+    try {
+      const newMsg = await chatService.sendChatMessage(roomId, {
         senderId: currentUser.id,
         senderName: currentUser.name,
         senderAvatar: currentUser.avatar,
@@ -891,8 +879,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sticker,
         replyToId: replyTo?.id,
         replyToName: replyTo?.name,
+        parentId: replyTo?.parentId !== undefined ? replyTo.parentId : null,
+        replyTo: replyTo,
+      });
+
+      setRooms((prev) =>
+        prev.map((r) => {
+          if (isRoomMatch(r.id, roomId)) {
+            const currentMessages = r.chatMessages || [];
+            if (!currentMessages.some((m) => m.id === newMsg.id)) {
+              return {
+                ...r,
+                chatMessages: [...currentMessages, newMsg],
+              };
+            }
+          }
+          return r;
+        })
+      );
+    } catch (err) {
+      console.warn('[AppContext] sendChatMessage service error:', err);
+    }
+  };
+
+  const editChatMessage = async (roomId: string, messageId: string, newText: string) => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      showToast('กรุณาเข้าสู่ระบบก่อน');
+      return;
+    }
+
+    if (!newText.trim()) return;
+
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (isRoomMatch(r.id, roomId)) {
+          const updatedMessages = (r.chatMessages || []).map((m) =>
+            m.id === messageId ? { ...m, text: newText.trim(), isUpdated: true } : m
+          );
+          saveRoomExtra(roomId, { chatMessages: updatedMessages });
+          return {
+            ...r,
+            chatMessages: updatedMessages,
+          };
+        }
+        return r;
       })
-      .catch((err) => console.warn('[AppContext] sendChatMessage service error:', err));
+    );
+
+    try {
+      await chatService.editChatMessage(roomId, messageId, newText.trim());
+    } catch (err) {
+      console.warn('[AppContext] editChatMessage service error:', err);
+    }
   };
 
   const deleteChatMessage = (roomId: string, messageId: string) => {
@@ -1117,6 +1156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         leaveRoom,
         sendChatMessage,
         deleteChatMessage,
+        editChatMessage,
         toggleCommentLike,
         toggleFavoriteRoom,
         toggleFavoriteActivity,

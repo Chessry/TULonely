@@ -471,6 +471,7 @@ export const roomService = {
                 user_id,
                 content,
                 parent_id,
+                is_updated,
                 created_at,
                 profile (
                   id,
@@ -493,6 +494,8 @@ export const roomService = {
                 const prof = c.profile;
                 const cMsg: ChatMessage = {
                   id: `comment-${c.id}`,
+                  commentId: c.id,
+                  parentId: c.parent_id || null,
                   senderId: c.user_id,
                   senderName: prof?.user_name || prof?.real_name || 'เพื่อนนักศึกษา',
                   senderAvatar:
@@ -502,9 +505,13 @@ export const roomService = {
                     ? new Date(c.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
                     : 'เมื่อสักครู่',
                   replyToId: c.parent_id ? `comment-${c.parent_id}` : undefined,
+                  isUpdated: Boolean(c.is_updated),
                 };
                 const curMsgs = existing.chat_messages || [];
-                if (!curMsgs.some((m) => m.id === cMsg.id)) {
+                const existingIdx = curMsgs.findIndex((m) => m.id === cMsg.id);
+                if (existingIdx !== -1) {
+                  curMsgs[existingIdx] = { ...curMsgs[existingIdx], ...cMsg };
+                } else {
                   existing.chat_messages = [...curMsgs, cMsg];
                 }
                 supabaseRoomsMap.set(bId, existing);

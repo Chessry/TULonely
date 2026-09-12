@@ -5,12 +5,13 @@ import {
   Send,
   ShieldAlert,
   MessageCircle,
-  Heart,
   CornerDownRight,
   X,
   Crown,
   LogIn,
   Trash2,
+  Edit3,
+  Check,
 } from 'lucide-react';
 
 interface BoardCommentsProps {
@@ -24,7 +25,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     setIsAuthModalOpen,
     sendChatMessage,
     deleteChatMessage,
-    toggleCommentLike,
+    editChatMessage,
     setReportTarget,
     setIsReportModalOpen,
     showToast,
@@ -32,7 +33,18 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
   } = useApp();
 
   const [commentText, setCommentText] = useState('');
-  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
+  // State remembering reply target: numeric commentId for parent_id in Supabase, messageId for UI key, name for mention display
+  const [replyingTo, setReplyingTo] = useState<{
+    commentId: number | null;
+    messageId: string;
+    name: string;
+  } | null>(null);
+
+  // Edit state (author only)
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const handleDeleteComment = (commentId: string) => {
@@ -41,7 +53,44 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     }
   };
 
-  const handleSendComment = (e?: React.FormEvent) => {
+  /**
+   * Helper to extract numeric commentId (int8) from ChatMessage
+   */
+  const getNumericCommentId = (msg: ChatMessage): number | null => {
+    if (typeof msg.commentId === 'number' && msg.commentId > 0) {
+      return msg.commentId;
+    }
+    const match = msg.id.replace(/^comment-/, '');
+    const parsed = Number(match);
+    if (!isNaN(parsed) && parsed > 0 && !msg.id.startsWith('msg-')) {
+      return parsed;
+    }
+    return null;
+  };
+
+  /**
+   * Start replying to a comment or a nested reply
+   * @param target The message being replied to (for name mention)
+   * @param parentComment Optional top-level comment to nest under
+   */
+  const handleStartReply = (target: ChatMessage, parentComment?: ChatMessage) => {
+    const rootComment = parentComment || target;
+    const parentIdNum = getNumericCommentId(rootComment);
+
+    setReplyingTo({
+      commentId: parentIdNum,
+      messageId: rootComment.id,
+      name: target.senderName,
+    });
+    inputRef.current?.focus();
+  };
+
+  /**
+   * Submit comment or reply
+   * Reliably sends parent_id (null for root comment, int8 id for reply)
+   * Clears replyingTo state immediately after submit
+   */
+  const handleSendComment = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!commentText.trim()) return;
 
@@ -51,32 +100,64 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
       return;
     }
 
-    sendChatMessage(
-      room.id,
-      commentText.trim(),
-      undefined,
-      replyingTo ? { id: replyingTo.id, name: replyingTo.name } : undefined
-    );
+    const currentReply = replyingTo;
+    const textToSend = commentText.trim();
 
+    // 1. Clear input and reply state immediately
     setCommentText('');
     setReplyingTo(null);
-  };
 
-  /**
-   * Start replying to a comment or a nested reply
-   * @param target The message being replied to (for name mention)
-   * @param parentId The root parent comment ID where the reply should nest
-   */
-  const handleStartReply = (target: ChatMessage, parentId?: string) => {
-    const rootId = parentId || target.id;
-    setReplyingTo({ id: rootId, name: target.senderName });
-    inputRef.current?.focus();
+    // 2. Submit to Supabase & local state
+    try {
+      await sendChatMessage(
+        room.id,
+        textToSend,
+        undefined,
+        currentReply
+          ? {
+              id: currentReply.messageId,
+              name: currentReply.name,
+              parentId: currentReply.commentId,
+            }
+          : undefined
+      );
+    } catch (err) {
+      console.error('[BoardComments] sendComment error:', err);
+      showToast('เกิดข้อผิดพลาดในการส่งความคิดเห็น');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendComment();
+    }
+  };
+
+  // Edit actions
+  const handleStartEdit = (comment: ChatMessage) => {
+    setEditingCommentId(comment.id);
+    setEditText(comment.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditText('');
+  };
+
+  const handleSaveEdit = async (commentId: string) => {
+    if (!editText.trim()) return;
+    setIsSavingEdit(true);
+    try {
+      await editChatMessage(room.id, commentId, editText.trim());
+      setEditingCommentId(null);
+      setEditText('');
+      showToast('แก้ไขความคิดเห็นเรียบร้อยแล้ว ✨');
+    } catch (err) {
+      console.error('[BoardComments] Save edit error:', err);
+      showToast('เกิดข้อผิดพลาดในการบันทึกการแก้ไข');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -89,23 +170,32 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     return match ? Number(match[0]) : 0;
   };
 
+  // Helper to resolve parent key for grouping
+  const getParentKey = (c: ChatMessage): string | null => {
+    if (c.parentId && c.parentId > 0) {
+      const parent = allComments.find(
+        (p) => p.commentId === c.parentId || p.id === `comment-${c.parentId}` || p.id === String(c.parentId)
+      );
+      if (parent) return parent.id;
+    }
+    if (c.replyToId) {
+      const parent = allComments.find((p) => p.id === c.replyToId);
+      if (parent) return parent.id;
+    }
+    return null;
+  };
+
   // Group replies under their parent comments
   const repliesMap = new Map<string, ChatMessage[]>();
   const topLevelComments: ChatMessage[] = [];
 
   allComments.forEach((c) => {
-    if (c.replyToId) {
-      const existing = repliesMap.get(c.replyToId) || [];
+    const parentKey = getParentKey(c);
+    if (parentKey) {
+      const existing = repliesMap.get(parentKey) || [];
       existing.push(c);
-      repliesMap.set(c.replyToId, existing);
-    }
-  });
-
-  allComments.forEach((c) => {
-    if (!c.replyToId) {
-      topLevelComments.push(c);
-    } else if (!allComments.some((parent) => parent.id === c.replyToId)) {
-      // Fallback: If reply points to non-existent parent, treat as top-level
+      repliesMap.set(parentKey, existing);
+    } else {
       topLevelComments.push(c);
     }
   });
@@ -215,7 +305,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
               </div>
             </div>
 
-            {/* Composer toolbar - Cleaned without "คำถามด่วน" or "กด Enter เพื่อส่ง" */}
+            {/* Composer toolbar */}
             <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 type="submit"
@@ -270,11 +360,11 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
           </div>
         ) : (
           topLevelComments.map((comment) => {
-            const isMine = comment.senderId === currentUser.id;
+            const isMine = isLoggedIn && currentUser && comment.senderId === currentUser.id;
             const isHost = comment.senderId === hostId;
-            const isLiked = comment.likedBy?.includes(currentUser.id) || false;
-            const likesCount = comment.likesCount || comment.likedBy?.length || 0;
-            const replies = repliesMap.get(comment.id) || [];
+            const replies = (repliesMap.get(comment.id) || []).sort(
+              (a, b) => getCommentTime(a) - getCommentTime(b)
+            );
 
             return (
               <div
@@ -322,17 +412,27 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     </div>
                   </div>
 
-                  {/* Top Right Action: Delete (author only) or Report (others) */}
+                  {/* Top Right Actions: Edit & Delete (author only) or Report (others) */}
                   <div className="flex items-center gap-1">
                     {isMine ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteComment(comment.id)}
-                        className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
-                        title="ลบความคิดเห็นของคุณ"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(comment)}
+                          className="p-1 text-stone-400 hover:text-amber-700 transition-colors cursor-pointer rounded-lg hover:bg-amber-50"
+                          title="แก้ไขความคิดเห็นของคุณ"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(comment.id)}
+                          className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
+                          title="ลบความคิดเห็นของคุณ"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={() => {
@@ -354,30 +454,65 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                   </div>
                 </div>
 
-                {/* Comment Text */}
-                <div className="text-xs sm:text-sm text-[#2D2D2D] leading-relaxed whitespace-pre-line pl-0.5">
-                  {comment.text}
-                </div>
-
-                {/* Actions Row (Like, Reply, and Delete if mine) */}
-                <div className="pt-1 flex items-center gap-4 text-xs font-semibold text-[#666]">
-                  <button
-                    type="button"
-                    onClick={() => toggleCommentLike(room.id, comment.id)}
-                    className={`inline-flex items-center gap-1.5 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60 ${
-                      isLiked ? 'text-rose-600 font-bold' : 'hover:text-rose-500'
-                    }`}
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`}
+                {/* Comment Text / Inline Edit Mode */}
+                {editingCommentId === comment.id ? (
+                  <div className="space-y-2 mt-1 animate-in fade-in duration-150">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={2}
+                      className="w-full bg-white border border-[#8B1D1D]/30 focus:border-[#8B1D1D] rounded-xl p-2.5 text-xs sm:text-sm text-[#2D2D2D] focus:outline-none focus:ring-1 focus:ring-[#8B1D1D] resize-none shadow-inner"
+                      placeholder="แก้ไขความคิดเห็นของคุณ..."
+                      autoFocus
                     />
-                    <span>{likesCount > 0 ? `${likesCount} ถูกใจ` : 'ถูกใจ'}</span>
-                  </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        disabled={isSavingEdit}
+                        className="px-3 py-1 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(comment.id)}
+                        disabled={!editText.trim() || isSavingEdit}
+                        className="px-4 py-1 rounded-xl text-xs font-bold bg-[#8B1D1D] hover:bg-[#6D0E1C] text-white transition-all shadow-xs disabled:opacity-50 cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>{isSavingEdit ? 'กำลังบันทึก...' : 'บันทึก'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs sm:text-sm text-[#2D2D2D] leading-relaxed whitespace-pre-line pl-0.5">
+                    {comment.text}
+                    {comment.isUpdated && (
+                      <span className="text-[10px] text-stone-400 font-normal ml-1.5 inline-block">
+                        (แก้ไขแล้ว)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Actions Row (Removed Like button, Edit & Reply only) */}
+                <div className="pt-1 flex items-center gap-3 text-xs font-semibold text-[#666]">
+                  {isMine && editingCommentId !== comment.id && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(comment)}
+                      className="inline-flex items-center gap-1 text-stone-500 hover:text-amber-700 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>แก้ไข</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     onClick={() => handleStartReply(comment)}
-                    className="inline-flex items-center gap-1.5 hover:text-[#8B1D1D] transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
+                    className="inline-flex items-center gap-1.5 hover:text-[#8B1D1D] text-stone-600 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
                   >
                     <CornerDownRight className="w-3.5 h-3.5" />
                     <span>ตอบกลับ</span>
@@ -390,8 +525,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     {replies.map((reply) => {
                       const isReplyMine = isLoggedIn && currentUser && reply.senderId === currentUser.id;
                       const isReplyHost = reply.senderId === hostId;
-                      const isReplyLiked = reply.likedBy?.includes(currentUser.id) || false;
-                      const replyLikesCount = reply.likesCount || reply.likedBy?.length || 0;
 
                       return (
                         <div
@@ -432,17 +565,27 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                               </div>
                             </div>
 
-                            {/* Top Right of Reply: Delete (if mine) or Report (if others) */}
+                            {/* Top Right of Reply: Edit & Delete (if mine) or Report (if others) */}
                             <div className="flex items-center gap-1">
                               {isReplyMine ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteComment(reply.id)}
-                                  className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
-                                  title="ลบการตอบกลับของคุณ"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEdit(reply)}
+                                    className="p-1 text-stone-400 hover:text-amber-700 transition-colors cursor-pointer rounded-lg hover:bg-amber-50"
+                                    title="แก้ไขการตอบกลับของคุณ"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteComment(reply.id)}
+                                    className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
+                                    title="ลบการตอบกลับของคุณ"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               ) : (
                                 <button
                                   onClick={() => {
@@ -474,30 +617,65 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                             </div>
                           )}
 
-                          {/* Reply Text */}
-                          <div className="text-xs text-[#2D2D2D] leading-relaxed whitespace-pre-line pl-1">
-                            {reply.text}
-                          </div>
-
-                          {/* Reply Actions (Like, Reply, and Delete if mine) */}
-                          <div className="pt-1 flex items-center gap-3 text-[11px] font-semibold text-[#666]">
-                            <button
-                              type="button"
-                              onClick={() => toggleCommentLike(room.id, reply.id)}
-                              className={`inline-flex items-center gap-1 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-white/60 ${
-                                isReplyLiked ? 'text-rose-600 font-bold' : 'hover:text-rose-500'
-                              }`}
-                            >
-                              <Heart
-                                className={`w-3 h-3 ${isReplyLiked ? 'fill-rose-500 text-rose-500' : ''}`}
+                          {/* Reply Text / Inline Edit Mode */}
+                          {editingCommentId === reply.id ? (
+                            <div className="space-y-2 mt-1 animate-in fade-in duration-150">
+                              <textarea
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                rows={2}
+                                className="w-full bg-white border border-[#8B1D1D]/30 focus:border-[#8B1D1D] rounded-xl p-2 text-xs text-[#2D2D2D] focus:outline-none focus:ring-1 focus:ring-[#8B1D1D] resize-none shadow-inner"
+                                placeholder="แก้ไขข้อความ..."
+                                autoFocus
                               />
-                              <span>{replyLikesCount > 0 ? `${replyLikesCount}` : 'ถูกใจ'}</span>
-                            </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEdit}
+                                  disabled={isSavingEdit}
+                                  className="px-2.5 py-0.5 rounded-lg text-xs font-semibold text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                                >
+                                  ยกเลิก
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEdit(reply.id)}
+                                  disabled={!editText.trim() || isSavingEdit}
+                                  className="px-3 py-0.5 rounded-lg text-xs font-bold bg-[#8B1D1D] hover:bg-[#6D0E1C] text-white transition-all shadow-xs disabled:opacity-50 cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <Check className="w-2.5 h-2.5" />
+                                  <span>{isSavingEdit ? 'บันทึก...' : 'บันทึก'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-[#2D2D2D] leading-relaxed whitespace-pre-line pl-1">
+                              {reply.text}
+                              {reply.isUpdated && (
+                                <span className="text-[10px] text-stone-400 font-normal ml-1 inline-block">
+                                  (แก้ไขแล้ว)
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Reply Actions (Removed Like button, Edit & Reply only) */}
+                          <div className="pt-1 flex items-center gap-2 text-[11px] font-semibold text-[#666]">
+                            {isReplyMine && editingCommentId !== reply.id && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(reply)}
+                                className="inline-flex items-center gap-0.5 text-stone-500 hover:text-amber-700 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-white/60"
+                              >
+                                <Edit3 className="w-2.5 h-2.5" />
+                                <span>แก้ไข</span>
+                              </button>
+                            )}
 
                             <button
                               type="button"
-                              onClick={() => handleStartReply(reply, comment.id)}
-                              className="inline-flex items-center gap-1 hover:text-[#8B1D1D] transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-white/60"
+                              onClick={() => handleStartReply(reply, comment)}
+                              className="inline-flex items-center gap-1 hover:text-[#8B1D1D] text-stone-600 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-white/60"
                             >
                               <CornerDownRight className="w-3 h-3" />
                               <span>ตอบกลับ</span>

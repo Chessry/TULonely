@@ -231,11 +231,19 @@ export const commentService = {
     }
 
     // เตรียม Payload สำหรับ INSERT ลงตาราง comments
+    let parentIdNum: number | null = null;
+    if (params.parentId !== undefined && params.parentId !== null) {
+      const parsed = Number(params.parentId);
+      if (!isNaN(parsed) && parsed > 0) {
+        parentIdNum = parsed;
+      }
+    }
+
     const payload = {
       board_id: targetBoardId,
       user_id: authUserId,
       content: params.content.trim(),
-      parent_id: params.parentId !== undefined && params.parentId !== null ? Number(params.parentId) : null,
+      parent_id: parentIdNum,
       is_updated: false,
     };
 
@@ -286,6 +294,31 @@ export const commentService = {
       return true;
     } catch (err) {
       console.error('[commentService] Delete exception:', err);
+      return false;
+    }
+  },
+
+  /**
+   * 4. แก้ไขความคิดเห็น (เฉพาะเจ้าของคอมเมนต์)
+   */
+  async updateComment(commentId: number, content: string): Promise<boolean> {
+    try {
+      if (!content.trim()) return false;
+      const { error } = await supabase
+        .from('comments')
+        .update({
+          content: content.trim(),
+          is_updated: true,
+        })
+        .eq('id', commentId);
+
+      if (error) {
+        console.error('[commentService] Error updating comment:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('[commentService] Update exception:', err);
       return false;
     }
   },

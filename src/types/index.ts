@@ -21,6 +21,8 @@ export interface Participant {
 
 export interface ChatMessage {
   id: string;
+  commentId?: number;
+  parentId?: number | null;
   senderId: string;
   senderName: string;
   senderAvatar: string;
@@ -33,6 +35,7 @@ export interface ChatMessage {
   replyToName?: string;
   likesCount?: number;
   likedBy?: string[];
+  isUpdated?: boolean;
 }
 
 export interface UniversityActivity {
