@@ -2,6 +2,7 @@ import { ChatMessage } from '../types';
 import { apiClient } from './apiClient';
 import { getLocalRooms, saveLocalRooms, saveRoomExtra } from './roomService';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { realtimeService } from './realtimeService';
 
 export interface SendMessagePayload {
   senderId: string;
@@ -82,15 +83,23 @@ export const chatService = {
       saveLocalRooms(rooms);
       saveRoomExtra(roomId, { chatMessages: updatedMessages });
 
-      // Sync to Supabase in background
+      // Sync to Supabase in background with all required fields
       if (isSupabaseConfigured) {
         (async () => {
           try {
+            const currentRoom = room || rooms.find((r) => r.id === roomId);
             const { error } = await supabase
               .from('rooms')
               .upsert({
                 id: roomId,
+                title: currentRoom?.title || 'บอร์ดกิจกรรม',
+                description: currentRoom?.description || '',
+                category: currentRoom?.category || 'university',
+                creator: currentRoom?.creator || { id: payload.senderId, name: payload.senderName },
+                participants: currentRoom?.participants || [],
                 chat_messages: updatedMessages,
+                status: currentRoom?.status || 'open',
+                max_participants: currentRoom?.maxParticipants || 4,
               });
             if (error) {
               console.warn('[chatService] Failed to sync message to Supabase:', error.message);
@@ -100,6 +109,9 @@ export const chatService = {
           }
         })();
       }
+
+      // Broadcast live to all other accounts online
+      realtimeService.broadcastNewComment(roomId, newMsg);
 
       return newMsg;
     }
@@ -134,8 +146,17 @@ export const chatService = {
         try {
           const { error } = await supabase
             .from('rooms')
-            .update({ chat_messages: updatedMessages })
-            .eq('id', roomId);
+            .upsert({
+              id: roomId,
+              title: room.title,
+              description: room.description,
+              category: room.category,
+              creator: room.creator,
+              participants: room.participants,
+              chat_messages: updatedMessages,
+              status: room.status,
+              max_participants: room.maxParticipants,
+            });
           if (error) {
             console.warn('[chatService] Failed to sync delete to Supabase:', error.message);
           }
@@ -144,6 +165,9 @@ export const chatService = {
         }
       })();
     }
+
+    // Broadcast live to all other accounts online
+    realtimeService.broadcastDeleteComment(roomId, messageId);
 
     return true;
   },
@@ -222,9 +246,28 @@ export const chatService = {
       Promise.resolve(
         supabase
           .from('rooms')
-          .update({ chat_messages: updatedMessages })
-          .eq('id', roomId)
+          .upsert({
+            id: roomId,
+            title: room.title,
+            description: room.description,
+            category: room.category,
+            creator: room.creator,
+            participants: room.participants,
+            chat_messages: updatedMessages,
+            status: room.status,
+            max_participants: room.maxParticipants,
+          })
       ).catch((err) => console.warn('[chatService] Like sync error:', err));
+    }
+
+    const targetMsg = updatedMessages.find((m) => m.id === messageId);
+    if (targetMsg) {
+      realtimeService.broadcastToggleLike(
+        roomId,
+        messageId,
+        targetMsg.likedBy || [],
+        targetMsg.likesCount || 0
+      );
     }
 
     return isLiked;

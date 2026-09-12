@@ -4,6 +4,7 @@ import { calculateRoomStatus } from '../utils/helpers';
 import { apiClient } from './apiClient';
 import { getLocalUser, saveLocalUser } from './authService';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { realtimeService } from './realtimeService';
 
 const ROOMS_STORAGE_KEY = 'tulonely_rooms';
 const ROOM_EXTRAS_KEY = 'tulonely_room_extras';
@@ -825,6 +826,9 @@ export const roomService = {
       });
     }
 
+    // Broadcast online to all accounts
+    realtimeService.broadcastRoomCreated(newRoom);
+
     return newRoom;
   },
 
@@ -941,6 +945,7 @@ export const roomService = {
 
       rooms[roomIndex] = updatedRoom;
       saveLocalRooms(rooms);
+      realtimeService.broadcastRoomUpdated(updatedRoom);
       return updatedRoom;
     });
   },
@@ -1050,6 +1055,9 @@ export const roomService = {
       })();
     }
 
+    // Broadcast online to all connected accounts!
+    realtimeService.broadcastRoomJoined(roomId, newParticipant, joinSystemMessage);
+
     return { room: updatedRoom, success: true };
   },
 
@@ -1122,6 +1130,9 @@ export const roomService = {
         }
       })();
     }
+
+    // Broadcast online to all connected accounts!
+    realtimeService.broadcastRoomLeft(roomId, userId, leaveMessage);
 
     return updatedRoom;
   },

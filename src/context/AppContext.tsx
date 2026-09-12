@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   CategoryType,
   Room,
+  Participant,
   UniversityActivity,
   UserProfile,
   NotificationItem,
@@ -21,6 +22,7 @@ import {
   authService,
   activityService,
   chatService,
+  realtimeService,
   getLocalRooms,
   getLocalUser,
   saveRoomExtra,
@@ -124,6 +126,9 @@ interface AppContextType {
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
+
+  // Realtime online connection status
+  realtimeStatus: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED';
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -360,6 +365,135 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authSub?.unsubscribe();
     };
   }, [navigate]);
+
+  const [realtimeStatus, setRealtimeStatus] = useState<'CONNECTED' | 'CONNECTING' | 'DISCONNECTED'>('CONNECTING');
+
+  // Supabase Online Realtime & Cross-Client Live Synchronization
+  useEffect(() => {
+    const unsubRealtime = realtimeService.initRealtime({
+      onStatusChange: (st) => setRealtimeStatus(st),
+      onNewComment: (roomId, message) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (r.id === roomId) {
+              const curMessages = r.chatMessages || [];
+              if (curMessages.some((m) => m.id === message.id)) return r;
+              const updated = [...curMessages, message];
+              saveRoomExtra(roomId, { chatMessages: updated });
+              return { ...r, chatMessages: updated };
+            }
+            return r;
+          })
+        );
+      },
+      onDeleteComment: (roomId, messageId) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (r.id === roomId) {
+              const curMessages = r.chatMessages || [];
+              const updated = curMessages.filter(
+                (m) => m.id !== messageId && m.replyToId !== messageId
+              );
+              saveRoomExtra(roomId, { chatMessages: updated });
+              return { ...r, chatMessages: updated };
+            }
+            return r;
+          })
+        );
+      },
+      onToggleLike: (roomId, messageId, likedBy, likesCount) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (r.id === roomId) {
+              const curMessages = r.chatMessages || [];
+              const updated = curMessages.map((m) =>
+                m.id === messageId ? { ...m, likedBy, likesCount } : m
+              );
+              saveRoomExtra(roomId, { chatMessages: updated });
+              return { ...r, chatMessages: updated };
+            }
+            return r;
+          })
+        );
+      },
+      onRoomJoined: (roomId, participant, joinMessage) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (r.id === roomId) {
+              const pMap = new Map<string, Participant>();
+              (r.participants || []).forEach((p) => pMap.set(p.id, p));
+              pMap.set(participant.id, participant);
+              const updatedParticipants = Array.from(pMap.values());
+
+              const curMessages = r.chatMessages || [];
+              const updatedMessages = curMessages.some((m) => m.id === joinMessage.id)
+                ? curMessages
+                : [...curMessages, joinMessage];
+
+              saveRoomExtra(roomId, {
+                participants: updatedParticipants,
+                chatMessages: updatedMessages,
+              });
+
+              const updatedRoom: Room = {
+                ...r,
+                participants: updatedParticipants,
+                chatMessages: updatedMessages,
+              };
+              updatedRoom.status = calculateRoomStatus(updatedRoom);
+              return updatedRoom;
+            }
+            return r;
+          })
+        );
+      },
+      onRoomLeft: (roomId, userId, leaveMessage) => {
+        setRooms((prev) =>
+          prev.map((r) => {
+            if (r.id === roomId) {
+              const updatedParticipants = (r.participants || []).filter((p) => p.id !== userId);
+              const curMessages = r.chatMessages || [];
+              const updatedMessages = curMessages.some((m) => m.id === leaveMessage.id)
+                ? curMessages
+                : [...curMessages, leaveMessage];
+
+              saveRoomExtra(roomId, {
+                participants: updatedParticipants,
+                chatMessages: updatedMessages,
+              });
+
+              const updatedRoom: Room = {
+                ...r,
+                participants: updatedParticipants,
+                chatMessages: updatedMessages,
+              };
+              updatedRoom.status = calculateRoomStatus(updatedRoom);
+              return updatedRoom;
+            }
+            return r;
+          })
+        );
+      },
+      onRoomCreated: (newRoom) => {
+        setRooms((prev) => {
+          if (prev.some((r) => r.id === newRoom.id)) return prev;
+          return [newRoom, ...prev];
+        });
+      },
+      onRoomUpdated: (updatedRoom) => {
+        setRooms((prev) =>
+          prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r))
+        );
+      },
+      onDatabaseUpdate: () => {
+        refreshRooms();
+      },
+    });
+
+    return () => {
+      unsubRealtime();
+    };
+  }, []);
 
 
   // Auth actions
@@ -976,6 +1110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         openCreateRoomFlow,
         toastMessage,
         showToast,
+        realtimeStatus,
       }}
     >
       {children}

@@ -28,6 +28,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     setReportTarget,
     setIsReportModalOpen,
     showToast,
+    realtimeStatus,
   } = useApp();
 
   const [commentText, setCommentText] = useState('');
@@ -128,6 +129,41 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
               {allComments.length}
             </span>
           </div>
+        </div>
+
+        {/* Live Realtime Online Status Indicator */}
+        <div
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-semibold shadow-2xs transition-colors ${
+            realtimeStatus === 'CONNECTED'
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700'
+              : realtimeStatus === 'CONNECTING'
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-700'
+              : 'bg-stone-500/10 border-stone-500/20 text-stone-600'
+          }`}
+          title={
+            realtimeStatus === 'CONNECTED'
+              ? 'เชื่อมต่อระบบ Realtime สมบูรณ์พร้อมสนทนา'
+              : realtimeStatus === 'CONNECTING'
+              ? 'กำลังเชื่อมต่อ Realtime...'
+              : 'ออฟไลน์ (ใช้งานระบบซิงค์ภายในเครื่อง)'
+          }
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              realtimeStatus === 'CONNECTED'
+                ? 'bg-emerald-500 animate-pulse'
+                : realtimeStatus === 'CONNECTING'
+                ? 'bg-amber-500 animate-ping'
+                : 'bg-stone-400'
+            }`}
+          />
+          <span>
+            {realtimeStatus === 'CONNECTED'
+              ? 'ออนไลน์แบบ Realtime'
+              : realtimeStatus === 'CONNECTING'
+              ? 'กำลังเชื่อมต่อ...'
+              : 'ออฟไลน์ (Local)'}
+          </span>
         </div>
       </div>
 
