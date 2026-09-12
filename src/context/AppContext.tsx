@@ -91,8 +91,16 @@ interface AppContextType {
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
 
+  isEditModalOpen: boolean;
+  setIsEditModalOpen: (open: boolean) => void;
+  editingRoom: Room | null;
+  setEditingRoom: (room: Room | null) => void;
+  openEditRoomModal: (room: Room) => void;
+  closeEditRoomModal: () => void;
+
   // Actions
   createRoom: (newRoomData: Omit<Room, 'id' | 'createdAt' | 'status' | 'chatMessages' | 'viewsCount' | 'creator' | 'participants'>) => Promise<string>;
+  updateRoom: (roomId: string, updates: Partial<Room>) => Promise<boolean>;
   deleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string) => boolean;
   leaveRoom: (roomId: string) => void;
@@ -244,6 +252,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Edit Room Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+
+  const openEditRoomModal = (room: Room) => {
+    setEditingRoom(room);
+    setIsEditModalOpen(true);
+  };
+
+  const closeEditRoomModal = () => {
+    setIsEditModalOpen(false);
+    setEditingRoom(null);
+  };
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -446,6 +468,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setRooms((prev) => [fallbackRoom, ...prev]);
       showToast('สร้างห้องเรียบร้อย (บันทึกข้อมูลในเครื่อง) ✨');
       return newId;
+    }
+  };
+
+  const updateRoom = async (roomId: string, updates: Partial<Room>): Promise<boolean> => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      showToast('กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูลบอร์ด');
+      return false;
+    }
+
+    try {
+      const maxPart = updates.maxParticipants ?? editingRoom?.maxParticipants;
+      setRooms((prev) =>
+        prev.map((r) => {
+          if (r.id === roomId) {
+            const updated = {
+              ...r,
+              ...updates,
+              maxParticipants: maxPart ?? r.maxParticipants,
+              maxParticipant: maxPart ?? r.maxParticipant ?? r.maxParticipants,
+            };
+            return {
+              ...updated,
+              status: calculateRoomStatus(updated),
+            };
+          }
+          return r;
+        })
+      );
+
+      await roomService.updateRoom(roomId, updates);
+      showToast('แก้ไขข้อมูลบอร์ดเรียบร้อยแล้ว ✨');
+      closeEditRoomModal();
+      return true;
+    } catch (err) {
+      console.error('[AppContext] updateRoom error:', err);
+      showToast('เกิดข้อผิดพลาดในการแก้ไขบอร์ด กรุณาลองใหม่อีกครั้ง');
+      return false;
     }
   };
 
@@ -778,12 +838,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsNotifDrawerOpen,
         isAuthModalOpen,
         setIsAuthModalOpen,
+        isEditModalOpen,
+        setIsEditModalOpen,
+        editingRoom,
+        setEditingRoom,
+        openEditRoomModal,
+        closeEditRoomModal,
         isLoggedIn,
         setIsLoggedIn,
         login,
         register,
         logout,
         createRoom,
+        updateRoom,
         deleteRoom,
         joinRoom,
         leaveRoom,

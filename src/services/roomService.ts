@@ -565,6 +565,12 @@ export const roomService = {
   async deleteRoom(roomId: string): Promise<void> {
     if (isSupabaseConfigured) {
       try {
+        if (roomId.startsWith('board-')) {
+          const boardIdNum = Number(roomId.replace('board-', ''));
+          if (!isNaN(boardIdNum)) {
+            await supabase.from('boards').delete().eq('id', boardIdNum);
+          }
+        }
         await supabase.from('rooms').delete().eq('id', roomId);
       } catch (err) {
         console.warn('[roomService] Failed to delete from Supabase:', err);
@@ -575,6 +581,98 @@ export const roomService = {
       const rooms = getLocalRooms();
       const updated = rooms.filter((r) => r.id !== roomId);
       saveLocalRooms(updated);
+    });
+  },
+
+  /**
+   * Update an existing room/board by ID
+   */
+  async updateRoom(roomId: string, updates: Partial<Room>): Promise<Room | null> {
+    if (isSupabaseConfigured) {
+      try {
+        let isoDateTime: string | undefined = undefined;
+        if (updates.activityDate) {
+          const timeStr = updates.activityTime || '17:00';
+          try {
+            isoDateTime = new Date(`${updates.activityDate}T${timeStr}:00`).toISOString();
+          } catch {
+            isoDateTime = `${updates.activityDate}T${timeStr}:00+07:00`;
+          }
+        } else if (updates.eventDateTime) {
+          isoDateTime = updates.eventDateTime;
+        }
+
+        // 1. Update Supabase 'boards' table if it corresponds to a board
+        if (roomId.startsWith('board-') || updates.boardId) {
+          const boardIdNum = updates.boardId || Number(roomId.replace('board-', ''));
+          if (!isNaN(boardIdNum)) {
+            const boardPayload: Record<string, unknown> = {};
+            if (updates.title !== undefined) boardPayload.title = updates.title.trim();
+            if (updates.description !== undefined) boardPayload.description = updates.description.trim();
+            if (updates.location !== undefined) boardPayload.location = updates.location.trim();
+            if (isoDateTime !== undefined) boardPayload.event_date_time = isoDateTime;
+            if (updates.maxParticipants !== undefined) {
+              boardPayload.max_participant = Number(updates.maxParticipants);
+            }
+            if (updates.categoryItemId !== undefined) {
+              boardPayload.category_item_id = updates.categoryItemId;
+            }
+
+            if (Object.keys(boardPayload).length > 0) {
+              await supabase.from('boards').update(boardPayload).eq('id', boardIdNum);
+            }
+          }
+        }
+
+        // 2. Also try updating 'rooms' table
+        const roomsPayload: Record<string, unknown> = {};
+        if (updates.title !== undefined) roomsPayload.title = updates.title.trim();
+        if (updates.description !== undefined) roomsPayload.description = updates.description.trim();
+        if (updates.category !== undefined) roomsPayload.category = updates.category;
+        if (updates.categoryId !== undefined) roomsPayload.category_id = updates.categoryId;
+        if (updates.universityActivityId !== undefined) {
+          roomsPayload.university_activity_id = updates.universityActivityId;
+        }
+        if (updates.universityActivityTitle !== undefined) {
+          roomsPayload.university_activity_title = updates.universityActivityTitle;
+        }
+        if (updates.activityDate !== undefined) roomsPayload.activity_date = updates.activityDate;
+        if (updates.activityTime !== undefined) roomsPayload.activity_time = updates.activityTime;
+        if (isoDateTime !== undefined) roomsPayload.event_date_time = isoDateTime;
+        if (updates.location !== undefined) roomsPayload.location = updates.location.trim();
+        if (updates.campus !== undefined) roomsPayload.campus = updates.campus;
+        if (updates.tags !== undefined) roomsPayload.tags = updates.tags;
+        if (updates.maxParticipants !== undefined) {
+          roomsPayload.max_participants = Number(updates.maxParticipants);
+          roomsPayload.max_participant = Number(updates.maxParticipants);
+        }
+
+        if (Object.keys(roomsPayload).length > 0) {
+          await supabase.from('rooms').update(roomsPayload).eq('id', roomId);
+        }
+      } catch (sbErr) {
+        console.warn('[roomService] Failed to update room in Supabase:', sbErr);
+      }
+    }
+
+    return apiClient.put<Room | null>(`/rooms/${roomId}`, updates, () => {
+      const rooms = getLocalRooms();
+      const roomIndex = rooms.findIndex((r) => r.id === roomId);
+      if (roomIndex === -1) return null;
+
+      const current = rooms[roomIndex];
+      const maxPart = updates.maxParticipants ?? current.maxParticipants;
+      const updatedRoom: Room = {
+        ...current,
+        ...updates,
+        maxParticipants: maxPart,
+        maxParticipant: maxPart,
+      };
+      updatedRoom.status = calculateRoomStatus(updatedRoom);
+
+      rooms[roomIndex] = updatedRoom;
+      saveLocalRooms(rooms);
+      return updatedRoom;
     });
   },
 

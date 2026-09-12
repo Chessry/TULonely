@@ -16,7 +16,8 @@ import {
   Trash2,
   ShieldAlert,
   Crown,
-  CheckCircle2
+  CheckCircle2,
+  Edit3,
 } from 'lucide-react';
 
 export const RoomDetailView: React.FC = () => {
@@ -32,6 +33,7 @@ export const RoomDetailView: React.FC = () => {
     leaveRoom,
     deleteRoom,
     toggleFavoriteRoom,
+    openEditRoomModal,
     setReportTarget,
     setIsReportModalOpen,
     showToast,
@@ -170,6 +172,18 @@ export const RoomDetailView: React.FC = () => {
           >
             <ShieldAlert className="w-4 h-4" />
           </button>
+
+          {/* Edit (if host) */}
+          {isHost && (
+            <button
+              onClick={() => openEditRoomModal(room)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/80 hover:bg-amber-100 backdrop-blur-xs border border-amber-200 text-amber-900 text-xs font-bold transition-all cursor-pointer shadow-xs"
+              title="แก้ไขข้อมูลบอร์ดนี้"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+              <span className="hidden sm:inline">แก้ไขบอร์ด</span>
+            </button>
+          )}
 
           {/* Delete (if host) */}
           {isHost && (
@@ -338,7 +352,16 @@ export const RoomDetailView: React.FC = () => {
                     </div>
                   </div>
 
-                  {!isHost && (
+                  {isHost ? (
+                    <button
+                      onClick={() => openEditRoomModal(room)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#8B1D1D] hover:bg-white/90 border border-[#8B1D1D]/30 bg-white/70 rounded-xl transition-all cursor-pointer shadow-2xs"
+                      title="แก้ไขข้อมูลบอร์ด"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-[#8B1D1D]" />
+                      <span>แก้ไขข้อมูลบอร์ด</span>
+                    </button>
+                  ) : (
                     <button
                       onClick={() => leaveRoom(room.id)}
                       className="px-3.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 bg-white/70 rounded-xl transition-colors cursor-pointer shadow-2xs"

@@ -3,7 +3,7 @@ import { Room } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRemainingTime, getStatusDetails, maskStudentId } from '../../utils/helpers';
 import { CATEGORY_METADATA } from '../../data/mockData';
-import { MapPin, Clock, Users, Heart, ArrowRight } from 'lucide-react';
+import { MapPin, Clock, Users, Heart, ArrowRight, Edit3 } from 'lucide-react';
 
 interface RoomCardProps {
   room: Room;
@@ -16,6 +16,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({ room, onSelect }) => {
     currentUser,
     joinRoom,
     toggleFavoriteRoom,
+    openEditRoomModal,
   } = useApp();
 
   const isFavorited = currentUser.favoriteRooms.includes(room.id);
@@ -65,6 +66,21 @@ export const RoomCard: React.FC<RoomCardProps> = ({ room, onSelect }) => {
               <span className={`w-1.5 h-1.5 rounded-full ${statusDetails.dotColor} ${room.status === 'open' ? 'animate-pulse' : ''}`} />
               <span>{statusDetails.label}</span>
             </span>
+
+            {/* Edit button if host */}
+            {isHost && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openEditRoomModal(room);
+                }}
+                className="p-1.5 rounded-full bg-white/60 hover:bg-white border border-white/80 transition-colors cursor-pointer text-[#8B1D1D] hover:scale-105 shadow-2xs"
+                title="แก้ไขข้อมูลบอร์ด"
+                aria-label="Edit Room"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            )}
 
             {/* Favorite button with frosted circle */}
             <button

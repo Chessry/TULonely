@@ -100,6 +100,7 @@ export const ProfileView: React.FC = () => {
     rooms,
     universityActivities,
     openCreateRoomFlow,
+    openEditRoomModal,
     setIsAuthModalOpen,
     logout,
     showToast,
@@ -710,7 +711,23 @@ export const ProfileView: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {myBoardRooms.map((room) => (
-                  <RoomCard key={room.id} room={room} />
+                  <div key={room.id} className="relative group/mycard flex flex-col justify-between">
+                    <RoomCard room={room} />
+                    <div className="mt-2.5 flex items-center justify-between px-3.5 py-2 rounded-2xl bg-white/50 backdrop-blur-xs border border-white/70 shadow-2xs">
+                      <span className="text-[11px] font-semibold text-[#666]">
+                        👥 {room.participants.length}/{room.maxParticipants} สมาชิก
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openEditRoomModal(room)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/80 hover:bg-white text-[#8B1D1D] hover:text-[#6D0E1C] border border-[#8B1D1D]/25 text-xs font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+                        title="แก้ไขข้อมูลบอร์ดนี้"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-[#8B1D1D]" />
+                        <span>แก้ไขบอร์ด</span>
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

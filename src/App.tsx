@@ -12,6 +12,7 @@ import { ProfileView } from './components/views/ProfileView';
 import { OnboardingAuthView } from './components/views/OnboardingAuthView';
 import { ResetPasswordView } from './components/views/ResetPasswordView';
 import { CreateRoomModal } from './components/modals/CreateRoomModal';
+import { EditRoomModal } from './components/modals/EditRoomModal';
 import { NotificationDrawer } from './components/modals/NotificationDrawer';
 import { ReportModal } from './components/modals/ReportModal';
 import { AuthModal } from './components/modals/AuthModal';
@@ -188,6 +189,7 @@ const AppContent: React.FC = () => {
 
       {/* Global Modals & Notifications */}
       <CreateRoomModal />
+      <EditRoomModal />
       <NotificationDrawer />
       <ReportModal />
       <AuthModal />
