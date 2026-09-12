@@ -5,3 +5,4 @@ export * from './activityService';
 export * from './chatService';
 export * from './supabaseClient';
 export * from './realtimeService';
+export * from './commentService';
