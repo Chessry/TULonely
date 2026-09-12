@@ -6,6 +6,59 @@ import { getLocalUser, saveLocalUser } from './authService';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const ROOMS_STORAGE_KEY = 'tulonely_rooms';
+const ROOM_EXTRAS_KEY = 'tulonely_room_extras';
+
+export interface RoomExtraData {
+  participants?: Participant[];
+  chatMessages?: ChatMessage[];
+}
+
+/**
+ * Get extras (participants & chat messages) saved per room
+ */
+export const getRoomExtras = (): Record<string, RoomExtraData> => {
+  try {
+    const raw = localStorage.getItem(ROOM_EXTRAS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (err) {
+    console.warn('[roomService] Error reading room extras:', err);
+  }
+  return {};
+};
+
+/**
+ * Persist additional participants and chat messages for a specific room
+ */
+export const saveRoomExtra = (
+  roomId: string,
+  extra: { participants?: Participant[]; chatMessages?: ChatMessage[] }
+): void => {
+  try {
+    const all = getRoomExtras();
+    const existing = all[roomId] || { participants: [], chatMessages: [] };
+
+    let newParticipants = existing.participants || [];
+    if (extra.participants) {
+      const pMap = new Map<string, Participant>();
+      newParticipants.forEach((p) => pMap.set(p.id, p));
+      extra.participants.forEach((p) => pMap.set(p.id, p));
+      newParticipants = Array.from(pMap.values());
+    }
+
+    let newMessages = existing.chatMessages || [];
+    if (extra.chatMessages !== undefined) {
+      newMessages = extra.chatMessages;
+    }
+
+    all[roomId] = {
+      participants: newParticipants,
+      chatMessages: newMessages,
+    };
+    localStorage.setItem(ROOM_EXTRAS_KEY, JSON.stringify(all));
+  } catch (err) {
+    console.warn('[roomService] Error saving room extras:', err);
+  }
+};
 
 export interface RoomFilterParams {
   category?: CategoryType | 'all';
@@ -16,18 +69,45 @@ export interface RoomFilterParams {
 }
 
 /**
- * Get all rooms from localStorage, initialized with INITIAL_ROOMS if empty
+ * Get all rooms from localStorage, enriched with roomExtras and initialized with INITIAL_ROOMS if empty
  */
 export const getLocalRooms = (): Room[] => {
   try {
     const raw = localStorage.getItem(ROOMS_STORAGE_KEY);
+    const extras = getRoomExtras();
+    let rooms: Room[] = [];
     if (raw) {
-      const parsed: Room[] = JSON.parse(raw);
-      return parsed.map((r) => ({
-        ...r,
-        status: calculateRoomStatus(r),
-      }));
+      rooms = JSON.parse(raw);
+    } else {
+      rooms = INITIAL_ROOMS;
     }
+
+    return rooms.map((r) => {
+      const extra = extras[r.id];
+      if (!extra) {
+        return {
+          ...r,
+          status: calculateRoomStatus(r),
+        };
+      }
+
+      // Merge participants preserving any joined accounts
+      const pMap = new Map<string, Participant>();
+      (r.participants || []).forEach((p) => pMap.set(p.id, p));
+      (extra.participants || []).forEach((p) => {
+        if (!pMap.has(p.id)) pMap.set(p.id, p);
+      });
+
+      const updated: Room = {
+        ...r,
+        participants: Array.from(pMap.values()),
+        chatMessages: extra.chatMessages !== undefined ? extra.chatMessages : (r.chatMessages || []),
+      };
+      return {
+        ...updated,
+        status: calculateRoomStatus(updated),
+      };
+    });
   } catch (err) {
     console.warn('[roomService] Error reading local rooms:', err);
   }
@@ -276,8 +356,118 @@ export const roomService = {
             );
           }
 
-          // Cache and merge with local
+          // Cache and merge with local and Supabase extras
+          const supabaseRoomsMap = new Map<string, { participants?: Participant[]; chat_messages?: ChatMessage[] }>();
+          try {
+            const { data: sbRooms } = await supabase
+              .from('rooms')
+              .select('id, participants, chat_messages');
+            if (sbRooms) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              sbRooms.forEach((r: any) => {
+                supabaseRoomsMap.set(r.id, {
+                  participants: Array.isArray(r.participants) ? r.participants : [],
+                  chat_messages: Array.isArray(r.chat_messages) ? r.chat_messages : [],
+                });
+              });
+            }
+          } catch (err) {
+            console.warn('[roomService] Could not fetch rooms table data:', err);
+          }
+
+          // Also check participants table in Supabase
+          try {
+            const { data: partsData } = await supabase
+              .from('participants')
+              .select(`
+                board_id,
+                user_id,
+                profile (
+                  id,
+                  student_id,
+                  real_name,
+                  user_name,
+                  faculty_id,
+                  bio
+                )
+              `);
+            if (partsData && partsData.length > 0) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              partsData.forEach((p: any) => {
+                const bId = `board-${p.board_id}`;
+                const existing = supabaseRoomsMap.get(bId) || { participants: [], chat_messages: [] };
+                const prof = p.profile;
+                const pObj: Participant = {
+                  id: p.user_id,
+                  name: prof?.user_name || prof?.real_name || 'เพื่อนร่วมห้อง',
+                  studentId: prof?.student_id || '681074xxxx',
+                  faculty: prof?.faculty_id || 'มหาวิทยาลัยธรรมศาสตร์',
+                  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                  joinedAt: 'เมื่อสักครู่',
+                  isHost: false,
+                };
+                const curParts = existing.participants || [];
+                if (!curParts.some((cp) => cp.id === pObj.id)) {
+                  existing.participants = [...curParts, pObj];
+                }
+                supabaseRoomsMap.set(bId, existing);
+              });
+            }
+          } catch {
+            // ignore
+          }
+
           const localRooms = getLocalRooms();
+          const roomExtras = getRoomExtras();
+
+          // Merge each mapped room with Supabase, local cache, and roomExtras so joined participants and comments are never wiped
+          mappedRooms = mappedRooms.map((mr) => {
+            const sbData = supabaseRoomsMap.get(mr.id);
+            const local = localRooms.find((lr) => lr.id === mr.id);
+            const extra = roomExtras[mr.id];
+
+            const pMap = new Map<string, Participant>();
+            // Creator from board
+            (mr.participants || []).forEach((p) => pMap.set(p.id, p));
+            // Supabase participants
+            if (sbData?.participants) {
+              sbData.participants.forEach((p) => {
+                if (!pMap.has(p.id)) pMap.set(p.id, p);
+              });
+            }
+            // Local room participants
+            if (local?.participants) {
+              local.participants.forEach((p) => {
+                if (!pMap.has(p.id)) pMap.set(p.id, p);
+              });
+            }
+            // Room extras participants
+            if (extra?.participants) {
+              extra.participants.forEach((p) => {
+                if (!pMap.has(p.id)) pMap.set(p.id, p);
+              });
+            }
+
+            let finalChatMessages = mr.chatMessages;
+            if (sbData?.chat_messages && sbData.chat_messages.length > 0) {
+              finalChatMessages = sbData.chat_messages;
+            }
+            if (local?.chatMessages && local.chatMessages.length >= (finalChatMessages?.length || 0)) {
+              finalChatMessages = local.chatMessages;
+            }
+            if (extra?.chatMessages && extra.chatMessages.length >= (finalChatMessages?.length || 0)) {
+              finalChatMessages = extra.chatMessages;
+            }
+
+            const mergedRoom: Room = {
+              ...mr,
+              participants: Array.from(pMap.values()),
+              chatMessages: finalChatMessages || [],
+            };
+            mergedRoom.status = calculateRoomStatus(mergedRoom);
+            return mergedRoom;
+          });
+
           const combined = [
             ...mappedRooms,
             ...localRooms.filter((lr) => !mappedRooms.some((mr) => mr.id === lr.id)),
@@ -318,9 +508,43 @@ export const roomService = {
             );
           }
 
-          // Cache locally for offline resilience
-          saveLocalRooms(mappedRooms);
-          return mappedRooms;
+          const localRooms = getLocalRooms();
+          const roomExtras = getRoomExtras();
+          mappedRooms = mappedRooms.map((mr) => {
+            const local = localRooms.find((lr) => lr.id === mr.id);
+            const extra = roomExtras[mr.id];
+            const pMap = new Map<string, Participant>();
+            (mr.participants || []).forEach((p) => pMap.set(p.id, p));
+            (local?.participants || []).forEach((p) => {
+              if (!pMap.has(p.id)) pMap.set(p.id, p);
+            });
+            (extra?.participants || []).forEach((p) => {
+              if (!pMap.has(p.id)) pMap.set(p.id, p);
+            });
+
+            let finalChatMessages = mr.chatMessages;
+            if (local?.chatMessages && local.chatMessages.length >= (finalChatMessages?.length || 0)) {
+              finalChatMessages = local.chatMessages;
+            }
+            if (extra?.chatMessages && extra.chatMessages.length >= (finalChatMessages?.length || 0)) {
+              finalChatMessages = extra.chatMessages;
+            }
+
+            const updated: Room = {
+              ...mr,
+              participants: Array.from(pMap.values()),
+              chatMessages: finalChatMessages || [],
+            };
+            updated.status = calculateRoomStatus(updated);
+            return updated;
+          });
+
+          const combined = [
+            ...mappedRooms,
+            ...localRooms.filter((lr) => !mappedRooms.some((mr) => mr.id === lr.id)),
+          ];
+          saveLocalRooms(combined);
+          return combined;
         }
       } catch (sbErr) {
         console.warn('[roomService] Supabase getRooms query failed, using local rooms:', sbErr);
@@ -381,16 +605,35 @@ export const roomService = {
    * Get single room details by ID
    */
   async getRoomById(id: string): Promise<Room | null> {
+    // 1. Check local rooms first for instant responsiveness
+    const localRooms = getLocalRooms();
+    const localMatch = localRooms.find((r) => r.id === id);
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.from('rooms').select('*').eq('id', id).single();
         if (!error && data) {
-          return mapSupabaseRowToRoom(data);
+          const room = mapSupabaseRowToRoom(data);
+          const extras = getRoomExtras()[id];
+          if (extras) {
+            const pMap = new Map<string, Participant>();
+            (room.participants || []).forEach((p) => pMap.set(p.id, p));
+            (extras.participants || []).forEach((p) => {
+              if (!pMap.has(p.id)) pMap.set(p.id, p);
+            });
+            room.participants = Array.from(pMap.values());
+            if (extras.chatMessages?.length) {
+              room.chatMessages = extras.chatMessages;
+            }
+          }
+          return room;
         }
       } catch (err) {
         console.warn('[roomService] Supabase getRoomById failed:', err);
       }
     }
+
+    if (localMatch) return localMatch;
 
     return apiClient.get<Room | null>(`/rooms/${id}`, () => {
       const rooms = getLocalRooms();
@@ -683,65 +926,105 @@ export const roomService = {
     roomId: string,
     user: UserProfile
   ): Promise<{ room: Room; success: boolean; message?: string }> {
-    return apiClient.post<{ room: Room; success: boolean; message?: string }>(
-      `/rooms/${roomId}/join`,
-      { userId: user.id },
-      () => {
-        const rooms = getLocalRooms();
-        const roomIndex = rooms.findIndex((r) => r.id === roomId);
+    const rooms = getLocalRooms();
+    let roomIndex = rooms.findIndex((r) => r.id === roomId);
 
-        if (roomIndex === -1) {
-          throw new Error('ไม่พบห้องที่ต้องการเข้าร่วม');
-        }
-
-        const room = rooms[roomIndex];
-
-        if (room.participants.some((p) => p.id === user.id)) {
-          return { room, success: true, message: 'คุณอยู่ในห้องนี้เรียบร้อยแล้ว' };
-        }
-
-        if (room.participants.length >= room.maxParticipants) {
-          return { room, success: false, message: 'ขออภัย ห้องนี้สมาชิกเต็มแล้ว' };
-        }
-
-        const currentStatus = calculateRoomStatus(room);
-        if (currentStatus === 'expired') {
-          return { room, success: false, message: 'ขออภัย ห้องนี้หมดเวลารับสมาชิกแล้ว' };
-        }
-
-        const newParticipant: Participant = {
-          id: user.id,
-          name: user.name,
-          studentId: user.studentId,
-          faculty: user.faculty,
-          avatar: user.avatar,
-          joinedAt: 'เมื่อสักครู่',
-          isHost: false,
-        };
-
-        const joinSystemMessage: ChatMessage = {
-          id: `sys-${Date.now()}`,
-          senderId: 'system',
-          senderName: 'ระบบ TUlonely',
-          senderAvatar: '',
-          text: `🎉 ${user.name} (${user.faculty}) ได้เข้าร่วมห้องแล้ว!`,
-          timestamp: 'เมื่อสักครู่',
-          isSystem: true,
-        };
-
-        const updatedRoom: Room = {
-          ...room,
-          participants: [...room.participants, newParticipant],
-          chatMessages: [...room.chatMessages, joinSystemMessage],
-        };
-        updatedRoom.status = calculateRoomStatus(updatedRoom);
-
-        rooms[roomIndex] = updatedRoom;
-        saveLocalRooms(rooms);
-
-        return { room: updatedRoom, success: true };
+    let room: Room;
+    if (roomIndex === -1) {
+      const fetched = await this.getRoomById(roomId);
+      if (!fetched) {
+        throw new Error('ไม่พบห้องที่ต้องการเข้าร่วม');
       }
-    );
+      room = fetched;
+      rooms.unshift(room);
+      roomIndex = 0;
+    } else {
+      room = rooms[roomIndex];
+    }
+
+    if (room.participants.some((p) => p.id === user.id)) {
+      return { room, success: true, message: 'คุณอยู่ในห้องนี้เรียบร้อยแล้ว' };
+    }
+
+    if (room.participants.length >= room.maxParticipants) {
+      return { room, success: false, message: 'ขออภัย ห้องนี้สมาชิกเต็มแล้ว' };
+    }
+
+    const currentStatus = calculateRoomStatus(room);
+    if (currentStatus === 'expired') {
+      return { room, success: false, message: 'ขออภัย ห้องนี้หมดเวลารับสมาชิกแล้ว' };
+    }
+
+    const newParticipant: Participant = {
+      id: user.id,
+      name: user.name,
+      studentId: user.studentId,
+      faculty: user.faculty,
+      avatar: user.avatar,
+      joinedAt: 'เมื่อสักครู่',
+      isHost: false,
+    };
+
+    const joinSystemMessage: ChatMessage = {
+      id: `sys-${Date.now()}`,
+      senderId: 'system',
+      senderName: 'ระบบ TUlonely',
+      senderAvatar: '',
+      text: `🎉 ${user.name} (${user.faculty}) ได้เข้าร่วมห้องแล้ว!`,
+      timestamp: 'เมื่อสักครู่',
+      isSystem: true,
+    };
+
+    const updatedParticipants = [...room.participants, newParticipant];
+    const updatedMessages = [...(room.chatMessages || []), joinSystemMessage];
+
+    const updatedRoom: Room = {
+      ...room,
+      participants: updatedParticipants,
+      chatMessages: updatedMessages,
+    };
+    updatedRoom.status = calculateRoomStatus(updatedRoom);
+
+    rooms[roomIndex] = updatedRoom;
+    saveLocalRooms(rooms);
+    saveRoomExtra(roomId, {
+      participants: updatedParticipants,
+      chatMessages: updatedMessages,
+    });
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const boardIdNum = roomId.startsWith('board-') ? Number(roomId.replace('board-', '')) : null;
+          if (boardIdNum && !isNaN(boardIdNum)) {
+            await supabase
+              .from('participants')
+              .insert({
+                board_id: boardIdNum,
+                user_id: user.id,
+              });
+          }
+
+          await supabase
+            .from('rooms')
+            .upsert({
+              id: roomId,
+              title: updatedRoom.title,
+              description: updatedRoom.description,
+              category: updatedRoom.category,
+              creator: updatedRoom.creator,
+              participants: updatedRoom.participants,
+              chat_messages: updatedRoom.chatMessages,
+              status: updatedRoom.status,
+              max_participants: updatedRoom.maxParticipants,
+            });
+        } catch (sbErr) {
+          console.warn('[roomService] Supabase joinRoom sync note:', sbErr);
+        }
+      })();
+    }
+
+    return { room: updatedRoom, success: true };
   },
 
   /**
@@ -752,40 +1035,69 @@ export const roomService = {
     userId: string,
     userName = 'เพื่อนร่วมห้อง'
   ): Promise<Room | null> {
-    return apiClient.post<Room | null>(
-      `/rooms/${roomId}/leave`,
-      { userId },
-      () => {
-        const rooms = getLocalRooms();
-        const roomIndex = rooms.findIndex((r) => r.id === roomId);
+    const rooms = getLocalRooms();
+    const roomIndex = rooms.findIndex((r) => r.id === roomId);
 
-        if (roomIndex === -1) return null;
+    if (roomIndex === -1) return null;
 
-        const room = rooms[roomIndex];
-        const updatedParticipants = room.participants.filter((p) => p.id !== userId);
+    const room = rooms[roomIndex];
+    const updatedParticipants = room.participants.filter((p) => p.id !== userId);
 
-        const leaveMessage: ChatMessage = {
-          id: `sys-leave-${Date.now()}`,
-          senderId: 'system',
-          senderName: 'ระบบ TUlonely',
-          senderAvatar: '',
-          text: `👋 ${userName} ได้ออกจากห้อง`,
-          timestamp: 'เมื่อสักครู่',
-          isSystem: true,
-        };
+    const leaveMessage: ChatMessage = {
+      id: `sys-leave-${Date.now()}`,
+      senderId: 'system',
+      senderName: 'ระบบ TUlonely',
+      senderAvatar: '',
+      text: `👋 ${userName} ได้ออกจากห้อง`,
+      timestamp: 'เมื่อสักครู่',
+      isSystem: true,
+    };
 
-        const updatedRoom: Room = {
-          ...room,
-          participants: updatedParticipants,
-          chatMessages: [...room.chatMessages, leaveMessage],
-        };
-        updatedRoom.status = calculateRoomStatus(updatedRoom);
+    const updatedMessages = [...(room.chatMessages || []), leaveMessage];
 
-        rooms[roomIndex] = updatedRoom;
-        saveLocalRooms(rooms);
-        return updatedRoom;
-      }
-    );
+    const updatedRoom: Room = {
+      ...room,
+      participants: updatedParticipants,
+      chatMessages: updatedMessages,
+    };
+    updatedRoom.status = calculateRoomStatus(updatedRoom);
+
+    rooms[roomIndex] = updatedRoom;
+    saveLocalRooms(rooms);
+
+    const extras = getRoomExtras();
+    if (extras[roomId]) {
+      extras[roomId] = {
+        participants: updatedParticipants,
+        chatMessages: updatedMessages,
+      };
+      localStorage.setItem(ROOM_EXTRAS_KEY, JSON.stringify(extras));
+    }
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const boardIdNum = roomId.startsWith('board-') ? Number(roomId.replace('board-', '')) : null;
+          if (boardIdNum && !isNaN(boardIdNum)) {
+            await supabase
+              .from('participants')
+              .delete()
+              .match({ board_id: boardIdNum, user_id: userId });
+          }
+          await supabase
+            .from('rooms')
+            .update({
+              participants: updatedParticipants,
+              chat_messages: updatedMessages,
+            })
+            .eq('id', roomId);
+        } catch (err) {
+          console.warn('[roomService] Supabase leaveRoom sync note:', err);
+        }
+      })();
+    }
+
+    return updatedRoom;
   },
 
   /**

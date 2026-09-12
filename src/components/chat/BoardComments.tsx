@@ -10,6 +10,7 @@ import {
   X,
   Crown,
   LogIn,
+  Trash2,
 } from 'lucide-react';
 
 interface BoardCommentsProps {
@@ -22,6 +23,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     isLoggedIn,
     setIsAuthModalOpen,
     sendChatMessage,
+    deleteChatMessage,
     toggleCommentLike,
     setReportTarget,
     setIsReportModalOpen,
@@ -31,6 +33,12 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
   const [commentText, setCommentText] = useState('');
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleDeleteComment = (commentId: string) => {
+    if (window.confirm('คุณต้องการลบความคิดเห็นนี้ใช่หรือไม่?')) {
+      deleteChatMessage(room.id, commentId);
+    }
+  };
 
   const handleSendComment = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -106,7 +114,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
 
   return (
     <div className="bg-white/55 backdrop-blur-xl rounded-3xl border border-white/80 overflow-hidden flex flex-col shadow-xl min-h-[600px]">
-      {/* Header - Cleaned without unwanted texts */}
+      {/* Header - Cleaned with 'Talky' title */}
       <div className="bg-white/70 backdrop-blur-md px-6 py-4 border-b border-white/70 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#8B1D1D]/10 text-[#8B1D1D] flex items-center justify-center border border-[#8B1D1D]/20 shadow-inner">
@@ -114,7 +122,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
           </div>
           <div className="flex items-center gap-2">
             <h3 className="text-base sm:text-lg font-bold text-[#2D2D2D] font-kanit">
-              ความคิดเห็น & ถาม-ตอบ
+              Talky
             </h3>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#8B1D1D]/10 text-[#8B1D1D] border border-[#8B1D1D]/20">
               {allComments.length}
@@ -278,23 +286,36 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     </div>
                   </div>
 
-                  {/* Report Button */}
-                  <button
-                    onClick={() => {
-                      setReportTarget({
-                        targetType: 'message',
-                        targetId: comment.id,
-                        targetTitle: `ความคิดเห็นจาก ${comment.senderName}: "${comment.text}"`,
-                        reason: 'harassment',
-                        details: '',
-                      });
-                      setIsReportModalOpen(true);
-                    }}
-                    className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
-                    title="รายงานความคิดเห็นนี้"
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Top Right Action: Delete (author only) or Report (others) */}
+                  <div className="flex items-center gap-1">
+                    {isMine ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
+                        title="ลบความคิดเห็นของคุณ"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setReportTarget({
+                            targetType: 'message',
+                            targetId: comment.id,
+                            targetTitle: `ความคิดเห็นจาก ${comment.senderName}: "${comment.text}"`,
+                            reason: 'harassment',
+                            details: '',
+                          });
+                          setIsReportModalOpen(true);
+                        }}
+                        className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
+                        title="รายงานความคิดเห็นนี้"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Comment Text */}
@@ -302,7 +323,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                   {comment.text}
                 </div>
 
-                {/* Actions Row (Like & Reply) */}
+                {/* Actions Row (Like, Reply, and Delete if mine) */}
                 <div className="pt-1 flex items-center gap-4 text-xs font-semibold text-[#666]">
                   <button
                     type="button"
@@ -325,13 +346,25 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     <CornerDownRight className="w-3.5 h-3.5" />
                     <span>ตอบกลับ</span>
                   </button>
+
+                  {isMine && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComment(comment.id)}
+                      className="inline-flex items-center gap-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-rose-50 ml-auto"
+                      title="ลบความคิดเห็นของคุณ"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>ลบ</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Nested Replies Section: Rendered directly INSIDE the parent comment */}
                 {replies.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-white/60 pl-3 sm:pl-4 border-l-2 border-[#8B1D1D]/30 space-y-3">
                     {replies.map((reply) => {
-                      const isReplyMine = reply.senderId === currentUser.id;
+                      const isReplyMine = isLoggedIn && currentUser && reply.senderId === currentUser.id;
                       const isReplyHost = reply.senderId === hostId;
                       const isReplyLiked = reply.likedBy?.includes(currentUser.id) || false;
                       const replyLikesCount = reply.likesCount || reply.likedBy?.length || 0;
@@ -375,22 +408,36 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                               </div>
                             </div>
 
-                            <button
-                              onClick={() => {
-                                setReportTarget({
-                                  targetType: 'message',
-                                  targetId: reply.id,
-                                  targetTitle: `การตอบกลับจาก ${reply.senderName}: "${reply.text}"`,
-                                  reason: 'harassment',
-                                  details: '',
-                                });
-                                setIsReportModalOpen(true);
-                              }}
-                              className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
-                              title="รายงานข้อความนี้"
-                            >
-                              <ShieldAlert className="w-3 h-3" />
-                            </button>
+                            {/* Top Right of Reply: Delete (if mine) or Report (if others) */}
+                            <div className="flex items-center gap-1">
+                              {isReplyMine ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteComment(reply.id)}
+                                  className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
+                                  title="ลบการตอบกลับของคุณ"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setReportTarget({
+                                      targetType: 'message',
+                                      targetId: reply.id,
+                                      targetTitle: `การตอบกลับจาก ${reply.senderName}: "${reply.text}"`,
+                                      reason: 'harassment',
+                                      details: '',
+                                    });
+                                    setIsReportModalOpen(true);
+                                  }}
+                                  className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
+                                  title="รายงานข้อความนี้"
+                                >
+                                  <ShieldAlert className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Tagged recipient */}
@@ -408,7 +455,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                             {reply.text}
                           </div>
 
-                          {/* Reply Actions (Like & Reply) */}
+                          {/* Reply Actions (Like, Reply, and Delete if mine) */}
                           <div className="pt-1 flex items-center gap-3 text-[11px] font-semibold text-[#666]">
                             <button
                               type="button"
@@ -431,6 +478,18 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                               <CornerDownRight className="w-3 h-3" />
                               <span>ตอบกลับ</span>
                             </button>
+
+                            {isReplyMine && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteComment(reply.id)}
+                                className="inline-flex items-center gap-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-rose-50 ml-auto"
+                                title="ลบการตอบกลับของคุณ"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>ลบ</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       );

@@ -23,6 +23,7 @@ import {
   chatService,
   getLocalRooms,
   getLocalUser,
+  saveRoomExtra,
 } from '../services';
 import { supabase, isSupabaseConfigured, testSupabaseConnection } from '../lib/supabaseClient';
 
@@ -105,6 +106,7 @@ interface AppContextType {
   joinRoom: (roomId: string) => boolean;
   leaveRoom: (roomId: string) => void;
   sendChatMessage: (roomId: string, text: string, sticker?: string, replyTo?: { id: string; name: string }) => void;
+  deleteChatMessage: (roomId: string, messageId: string) => void;
   toggleCommentLike: (roomId: string, commentId: string) => void;
   toggleFavoriteRoom: (roomId: string) => void;
   toggleFavoriteActivity: (actId: string) => void;
@@ -577,13 +579,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystem: true,
     };
 
+    const updatedMessages = [...(room.chatMessages || []), joinSystemMessage];
+
+    saveRoomExtra(roomId, {
+      participants: updatedParticipants,
+      chatMessages: updatedMessages,
+    });
+
     setRooms((prev) =>
       prev.map((r) => {
         if (r.id === roomId) {
           const updated = {
             ...r,
             participants: updatedParticipants,
-            chatMessages: [...r.chatMessages, joinSystemMessage],
+            chatMessages: updatedMessages,
           };
           return {
             ...updated,
@@ -633,13 +642,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSystem: true,
     };
 
+    const updatedMessages = [...(room.chatMessages || []), leaveMessage];
+
+    saveRoomExtra(roomId, {
+      participants: updatedParticipants,
+      chatMessages: updatedMessages,
+    });
+
     setRooms((prev) =>
       prev.map((r) => {
         if (r.id === roomId) {
           const updated = {
             ...r,
             participants: updatedParticipants,
-            chatMessages: [...r.chatMessages, leaveMessage],
+            chatMessages: updatedMessages,
           };
           return {
             ...updated,
@@ -712,6 +728,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         replyToName: replyTo?.name,
       })
       .catch((err) => console.warn('[AppContext] sendChatMessage service error:', err));
+  };
+
+  const deleteChatMessage = (roomId: string, messageId: string) => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      showToast('กรุณาเข้าสู่ระบบก่อน');
+      return;
+    }
+
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id === roomId) {
+          const updatedMessages = (r.chatMessages || []).filter(
+            (m) => m.id !== messageId && m.replyToId !== messageId
+          );
+          saveRoomExtra(roomId, { chatMessages: updatedMessages });
+          return {
+            ...r,
+            chatMessages: updatedMessages,
+          };
+        }
+        return r;
+      })
+    );
+
+    chatService
+      .deleteMessage(roomId, messageId)
+      .catch((err) => console.warn('[AppContext] deleteChatMessage service error:', err));
+
+    showToast('ลบความคิดเห็นเรียบร้อยแล้ว 🗑️');
   };
 
   const toggleCommentLike = (roomId: string, commentId: string) => {
@@ -905,6 +951,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         joinRoom,
         leaveRoom,
         sendChatMessage,
+        deleteChatMessage,
         toggleCommentLike,
         toggleFavoriteRoom,
         toggleFavoriteActivity,

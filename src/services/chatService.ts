@@ -1,6 +1,6 @@
 import { ChatMessage } from '../types';
 import { apiClient } from './apiClient';
-import { getLocalRooms, saveLocalRooms } from './roomService';
+import { getLocalRooms, saveLocalRooms, saveRoomExtra } from './roomService';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 export interface SendMessagePayload {
@@ -74,35 +74,78 @@ export const chatService = {
 
     if (roomIndex !== -1) {
       const room = rooms[roomIndex];
-      const updatedMessages = [...room.chatMessages, newMsg];
+      const updatedMessages = [...(room.chatMessages || []), newMsg];
       rooms[roomIndex] = {
         ...room,
         chatMessages: updatedMessages,
       };
       saveLocalRooms(rooms);
+      saveRoomExtra(roomId, { chatMessages: updatedMessages });
 
       // Sync to Supabase in background
       if (isSupabaseConfigured) {
-        Promise.resolve(
-          supabase
-            .from('rooms')
-            .update({ chat_messages: updatedMessages })
-            .eq('id', roomId)
-        )
-          .then(({ error }) => {
+        (async () => {
+          try {
+            const { error } = await supabase
+              .from('rooms')
+              .upsert({
+                id: roomId,
+                chat_messages: updatedMessages,
+              });
             if (error) {
               console.warn('[chatService] Failed to sync message to Supabase:', error.message);
             }
-          })
-          .catch((err) => console.warn('[chatService] Chat sync error:', err));
+          } catch (err) {
+            console.warn('[chatService] Chat sync error:', err);
+          }
+        })();
       }
-
 
       return newMsg;
     }
 
     // Backend API fallback
     return apiClient.post<ChatMessage>(`/rooms/${roomId}/messages`, payload, () => newMsg);
+  },
+
+  /**
+   * Delete a chat message/comment and any of its direct replies
+   */
+  async deleteMessage(roomId: string, messageId: string): Promise<boolean> {
+    const rooms = getLocalRooms();
+    const roomIndex = rooms.findIndex((r) => r.id === roomId);
+    if (roomIndex === -1) return false;
+
+    const room = rooms[roomIndex];
+    // Filter out the deleted comment and any nested replies replying to it
+    const updatedMessages = (room.chatMessages || []).filter(
+      (msg) => msg.id !== messageId && msg.replyToId !== messageId
+    );
+
+    rooms[roomIndex] = {
+      ...room,
+      chatMessages: updatedMessages,
+    };
+    saveLocalRooms(rooms);
+    saveRoomExtra(roomId, { chatMessages: updatedMessages });
+
+    if (isSupabaseConfigured) {
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from('rooms')
+            .update({ chat_messages: updatedMessages })
+            .eq('id', roomId);
+          if (error) {
+            console.warn('[chatService] Failed to sync delete to Supabase:', error.message);
+          }
+        } catch (err) {
+          console.warn('[chatService] Delete message sync error:', err);
+        }
+      })();
+    }
+
+    return true;
   },
 
   /**
@@ -173,6 +216,7 @@ export const chatService = {
       chatMessages: updatedMessages,
     };
     saveLocalRooms(rooms);
+    saveRoomExtra(roomId, { chatMessages: updatedMessages });
 
     if (isSupabaseConfigured) {
       Promise.resolve(
