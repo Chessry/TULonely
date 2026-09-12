@@ -104,7 +104,8 @@ interface AppContextType {
   deleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string) => boolean;
   leaveRoom: (roomId: string) => void;
-  sendChatMessage: (roomId: string, text: string, sticker?: string) => void;
+  sendChatMessage: (roomId: string, text: string, sticker?: string, replyTo?: { id: string; name: string }) => void;
+  toggleCommentLike: (roomId: string, commentId: string) => void;
   toggleFavoriteRoom: (roomId: string) => void;
   toggleFavoriteActivity: (actId: string) => void;
   updateUserProfile: (updated: Partial<UserProfile>) => void;
@@ -657,10 +658,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('ออกจากห้องเรียบร้อยแล้ว');
   };
 
-  const sendChatMessage = (roomId: string, text: string, sticker?: string) => {
+  const sendChatMessage = (
+    roomId: string,
+    text: string,
+    sticker?: string,
+    replyTo?: { id: string; name: string }
+  ) => {
     if (!isLoggedIn) {
       setIsAuthModalOpen(true);
-      showToast('กรุณาลงทะเบียนหรือเข้าสู่ระบบก่อนส่งข้อความ 💬');
+      showToast('กรุณาลงทะเบียนหรือเข้าสู่ระบบก่อนแสดงความคิดเห็น 💬');
       return;
     }
 
@@ -671,9 +677,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderAvatar: currentUser.avatar,
+      senderFaculty: currentUser.faculty,
       text: text.trim(),
       timestamp: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.',
       sticker,
+      replyToId: replyTo?.id,
+      replyToName: replyTo?.name,
+      likesCount: 0,
+      likedBy: [],
     };
 
     setRooms((prev) =>
@@ -694,10 +705,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         senderId: currentUser.id,
         senderName: currentUser.name,
         senderAvatar: currentUser.avatar,
+        senderFaculty: currentUser.faculty,
         text: text.trim(),
         sticker,
+        replyToId: replyTo?.id,
+        replyToName: replyTo?.name,
       })
       .catch((err) => console.warn('[AppContext] sendChatMessage service error:', err));
+  };
+
+  const toggleCommentLike = (roomId: string, commentId: string) => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      showToast('กรุณาเข้าสู่ระบบก่อนกดถูกใจความคิดเห็น');
+      return;
+    }
+
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id === roomId) {
+          const updatedMessages = r.chatMessages.map((msg) => {
+            if (msg.id === commentId) {
+              const likedBy = msg.likedBy || [];
+              const alreadyLiked = likedBy.includes(currentUser.id);
+              const newLikedBy = alreadyLiked
+                ? likedBy.filter((id) => id !== currentUser.id)
+                : [...likedBy, currentUser.id];
+              return {
+                ...msg,
+                likedBy: newLikedBy,
+                likesCount: newLikedBy.length,
+              };
+            }
+            return msg;
+          });
+          return { ...r, chatMessages: updatedMessages };
+        }
+        return r;
+      })
+    );
+
+    chatService
+      .toggleLikeComment(roomId, commentId, currentUser.id)
+      .catch((err) => console.warn('[AppContext] toggleCommentLike error:', err));
   };
 
   const toggleFavoriteRoom = (roomId: string) => {
@@ -855,6 +905,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         joinRoom,
         leaveRoom,
         sendChatMessage,
+        toggleCommentLike,
         toggleFavoriteRoom,
         toggleFavoriteActivity,
         updateUserProfile,

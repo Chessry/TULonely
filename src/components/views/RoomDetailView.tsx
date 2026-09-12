@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { GroupChat } from '../chat/GroupChat';
+import { BoardComments } from '../chat/BoardComments';
 import { RoomDetailSkeleton, ErrorState } from '../common/skeletons';
 import { formatRemainingTime, getStatusDetails, maskStudentId } from '../../utils/helpers';
 import { CATEGORY_METADATA } from '../../data/mockData';
@@ -203,10 +203,10 @@ export const RoomDetailView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Grid: Left Details & Right Chat */}
+      {/* Main Grid: Left Details & Right Comments (50/50 Half Screen Split) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column (7 cols): Room Info, Host, Participants */}
-        <div className="lg:col-span-7 space-y-6">
+        {/* Left Column (6 cols): Room Info, Host, Participants */}
+        <div className="lg:col-span-6 space-y-6">
           {/* Main Info Card - Frosted Glass */}
           <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-6 sm:p-7 border border-white/80 shadow-lg space-y-5">
             {/* Top Badges & Status */}
@@ -429,9 +429,9 @@ export const RoomDetailView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column (5 cols): Group Chat Interface */}
-        <div className="lg:col-span-5 space-y-4">
-          <GroupChat room={room} />
+        {/* Right Column (6 cols): Comments & Q&A Discussion Feed (Facebook / X style) */}
+        <div className="lg:col-span-6 space-y-4">
+          <BoardComments room={room} />
         </div>
       </div>
     </div>

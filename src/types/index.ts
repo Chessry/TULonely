@@ -24,10 +24,15 @@ export interface ChatMessage {
   senderId: string;
   senderName: string;
   senderAvatar: string;
+  senderFaculty?: string;
   text: string;
   timestamp: string;
   isSystem?: boolean;
   sticker?: string;
+  replyToId?: string;
+  replyToName?: string;
+  likesCount?: number;
+  likedBy?: string[];
 }
 
 export interface UniversityActivity {

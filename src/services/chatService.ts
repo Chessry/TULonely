@@ -7,8 +7,11 @@ export interface SendMessagePayload {
   senderId: string;
   senderName: string;
   senderAvatar: string;
+  senderFaculty?: string;
   text: string;
   sticker?: string;
+  replyToId?: string;
+  replyToName?: string;
 }
 
 /**
@@ -51,6 +54,7 @@ export const chatService = {
       senderId: payload.senderId,
       senderName: payload.senderName,
       senderAvatar: payload.senderAvatar,
+      senderFaculty: payload.senderFaculty,
       text: payload.text.trim(),
       timestamp:
         new Date().toLocaleTimeString('th-TH', {
@@ -58,6 +62,10 @@ export const chatService = {
           minute: '2-digit',
         }) + ' น.',
       sticker: payload.sticker,
+      replyToId: payload.replyToId,
+      replyToName: payload.replyToName,
+      likesCount: 0,
+      likedBy: [],
     };
 
     // Update local state first for immediate snappy UI
@@ -128,8 +136,55 @@ export const chatService = {
         supabase.removeChannel(channel);
       };
     } catch (err) {
-      console.warn('[chatService] Failed to initialize realtime channel:', err);
+      console.warn('[chatService] Error setting up Realtime subscription:', err);
       return () => {};
     }
   },
+
+  /**
+   * Toggle like on a comment/message
+   */
+  async toggleLikeComment(roomId: string, messageId: string, userId: string): Promise<boolean> {
+    const rooms = getLocalRooms();
+    const roomIndex = rooms.findIndex((r) => r.id === roomId);
+    if (roomIndex === -1) return false;
+
+    const room = rooms[roomIndex];
+    let isLiked = false;
+    const updatedMessages = room.chatMessages.map((msg) => {
+      if (msg.id === messageId) {
+        const likedBy = msg.likedBy || [];
+        const alreadyLiked = likedBy.includes(userId);
+        const newLikedBy = alreadyLiked
+          ? likedBy.filter((id) => id !== userId)
+          : [...likedBy, userId];
+        isLiked = !alreadyLiked;
+        return {
+          ...msg,
+          likedBy: newLikedBy,
+          likesCount: newLikedBy.length,
+        };
+      }
+      return msg;
+    });
+
+    rooms[roomIndex] = {
+      ...room,
+      chatMessages: updatedMessages,
+    };
+    saveLocalRooms(rooms);
+
+    if (isSupabaseConfigured) {
+      Promise.resolve(
+        supabase
+          .from('rooms')
+          .update({ chat_messages: updatedMessages })
+          .eq('id', roomId)
+      ).catch((err) => console.warn('[chatService] Like sync error:', err));
+    }
+
+    return isLiked;
+  },
 };
+
+export default chatService;
