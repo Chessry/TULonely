@@ -13,7 +13,8 @@ export interface RealtimeEventHandlers {
   onRoomJoined?: (
     roomId: string,
     participant: Participant,
-    joinMessage: ChatMessage
+    joinMessage: ChatMessage,
+    fullParticipants?: Participant[]
   ) => void;
   onRoomLeft?: (
     roomId: string,
@@ -110,7 +111,8 @@ class RealtimeService {
             this.handlers.onRoomJoined?.(
               payload.roomId,
               payload.participant,
-              payload.joinMessage
+              payload.joinMessage,
+              payload.fullParticipants
             );
           }
         })
@@ -134,16 +136,8 @@ class RealtimeService {
           }
         });
 
-      // 2. Listen for Postgres Changes on 'rooms' table (database-level sync)
+      // 2. Listen for Postgres Changes on DB tables (database-level sync)
       this.supabaseChannel
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'rooms' },
-          (payload: any) => {
-            console.log('⚡ [realtimeService] Supabase DB rooms change:', payload.eventType);
-            this.handlers.onDatabaseUpdate?.();
-          }
-        )
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'participants' },
@@ -157,6 +151,14 @@ class RealtimeService {
           { event: '*', schema: 'public', table: 'boards' },
           (payload: any) => {
             console.log('⚡ [realtimeService] Supabase DB boards change:', payload.eventType);
+            this.handlers.onDatabaseUpdate?.();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'comments' },
+          (payload: any) => {
+            console.log('⚡ [realtimeService] Supabase DB comments change:', payload.eventType);
             this.handlers.onDatabaseUpdate?.();
           }
         );
@@ -214,7 +216,8 @@ class RealtimeService {
           this.handlers.onRoomJoined?.(
             payload.roomId,
             payload.participant,
-            payload.joinMessage
+            payload.joinMessage,
+            payload.fullParticipants
           );
         }
         break;
@@ -254,7 +257,7 @@ class RealtimeService {
     }
 
     // 2. Send via Supabase Realtime Channel
-    if (this.supabaseChannel && this.isSubscribed) {
+    if (this.supabaseChannel) {
       try {
         this.supabaseChannel.send({
           type: 'broadcast',
@@ -299,9 +302,10 @@ class RealtimeService {
   public broadcastRoomJoined(
     roomId: string,
     participant: Participant,
-    joinMessage: ChatMessage
+    joinMessage: ChatMessage,
+    fullParticipants?: Participant[]
   ) {
-    this.sendBroadcast('room_joined', { roomId, participant, joinMessage });
+    this.sendBroadcast('room_joined', { roomId, participant, joinMessage, fullParticipants });
   }
 
   /**

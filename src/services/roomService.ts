@@ -21,6 +21,12 @@ export const isMockRoom = (r: Room): boolean => {
   return false;
 };
 
+export const isRoomMatch = (rId?: string | null, targetId?: string | null): boolean => {
+  if (!rId || !targetId) return false;
+  if (rId === targetId) return true;
+  return rId.replace(/^board-/, '') === targetId.replace(/^board-/, '');
+};
+
 /**
  * Get extras (participants & chat messages) saved per room
  */
@@ -407,6 +413,7 @@ export const roomService = {
             const { data: partsData } = await supabase
               .from('participants')
               .select(`
+                id,
                 board_id,
                 user_id,
                 profile (
@@ -415,7 +422,11 @@ export const roomService = {
                   real_name,
                   user_name,
                   faculty_id,
-                  bio
+                  bio,
+                  faculties (
+                    id,
+                    faculty_name
+                  )
                 )
               `);
             if (partsData && partsData.length > 0) {
@@ -424,12 +435,17 @@ export const roomService = {
                 const bId = `board-${p.board_id}`;
                 const existing = supabaseRoomsMap.get(bId) || { participants: [], chat_messages: [] };
                 const prof = p.profile;
+                const facultyName =
+                  prof?.faculties?.faculty_name ||
+                  (prof?.faculty_id === 1 ? 'คณะวิศวกรรมศาสตร์' : 'มหาวิทยาลัยธรรมศาสตร์');
+
                 const pObj: Participant = {
                   id: p.user_id,
                   name: prof?.user_name || prof?.real_name || 'เพื่อนร่วมห้อง',
                   studentId: prof?.student_id || '681074xxxx',
-                  faculty: prof?.faculty_id || 'มหาวิทยาลัยธรรมศาสตร์',
-                  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                  faculty: facultyName,
+                  avatar:
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
                   joinedAt: 'เมื่อสักครู่',
                   isHost: false,
                 };
@@ -438,6 +454,61 @@ export const roomService = {
                   existing.participants = [...curParts, pObj];
                 }
                 supabaseRoomsMap.set(bId, existing);
+                supabaseRoomsMap.set(String(p.board_id), existing);
+              });
+            }
+          } catch {
+            // ignore
+          }
+
+          // Fetch comments from Supabase 'comments' table
+          try {
+            const { data: commsData } = await supabase
+              .from('comments')
+              .select(`
+                id,
+                board_id,
+                user_id,
+                content,
+                parent_id,
+                created_at,
+                profile (
+                  id,
+                  student_id,
+                  real_name,
+                  user_name,
+                  faculties (
+                    id,
+                    faculty_name
+                  )
+                )
+              `)
+              .order('created_at', { ascending: true });
+
+            if (commsData && commsData.length > 0) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              commsData.forEach((c: any) => {
+                const bId = `board-${c.board_id}`;
+                const existing = supabaseRoomsMap.get(bId) || { participants: [], chat_messages: [] };
+                const prof = c.profile;
+                const cMsg: ChatMessage = {
+                  id: `comment-${c.id}`,
+                  senderId: c.user_id,
+                  senderName: prof?.user_name || prof?.real_name || 'เพื่อนนักศึกษา',
+                  senderAvatar:
+                    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                  text: c.content || '',
+                  timestamp: c.created_at
+                    ? new Date(c.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+                    : 'เมื่อสักครู่',
+                  replyToId: c.parent_id ? `comment-${c.parent_id}` : undefined,
+                };
+                const curMsgs = existing.chat_messages || [];
+                if (!curMsgs.some((m) => m.id === cMsg.id)) {
+                  existing.chat_messages = [...curMsgs, cMsg];
+                }
+                supabaseRoomsMap.set(bId, existing);
+                supabaseRoomsMap.set(String(c.board_id), existing);
               });
             }
           } catch {
@@ -449,47 +520,57 @@ export const roomService = {
 
           // Merge each mapped room with Supabase, local cache, and roomExtras so joined participants and comments are never wiped
           mappedRooms = mappedRooms.map((mr) => {
-            const sbData = supabaseRoomsMap.get(mr.id);
-            const local = localRooms.find((lr) => lr.id === mr.id);
-            const extra = roomExtras[mr.id];
+            const sbData = supabaseRoomsMap.get(mr.id) || supabaseRoomsMap.get(mr.id.replace('board-', ''));
+            const local = localRooms.find((lr) => isRoomMatch(lr.id, mr.id));
+            const extra = roomExtras[mr.id] || roomExtras[mr.id.replace('board-', '')];
 
             const pMap = new Map<string, Participant>();
             // Creator from board
-            (mr.participants || []).forEach((p) => pMap.set(p.id, p));
+            (mr.participants || []).forEach((p) => pMap.set(p.id, { ...p, isHost: true }));
             // Supabase participants
             if (sbData?.participants) {
               sbData.participants.forEach((p) => {
-                if (!pMap.has(p.id)) pMap.set(p.id, p);
+                const isHost = p.id === mr.creator.id;
+                if (!pMap.has(p.id)) {
+                  pMap.set(p.id, { ...p, isHost });
+                } else if (isHost) {
+                  pMap.set(p.id, { ...pMap.get(p.id)!, isHost: true });
+                }
               });
             }
             // Local room participants
             if (local?.participants) {
               local.participants.forEach((p) => {
-                if (!pMap.has(p.id)) pMap.set(p.id, p);
+                const isHost = p.id === mr.creator.id;
+                if (!pMap.has(p.id)) {
+                  pMap.set(p.id, { ...p, isHost });
+                } else if (isHost) {
+                  pMap.set(p.id, { ...pMap.get(p.id)!, isHost: true });
+                }
               });
             }
             // Room extras participants
             if (extra?.participants) {
               extra.participants.forEach((p) => {
-                if (!pMap.has(p.id)) pMap.set(p.id, p);
+                const isHost = p.id === mr.creator.id;
+                if (!pMap.has(p.id)) {
+                  pMap.set(p.id, { ...p, isHost });
+                } else if (isHost) {
+                  pMap.set(p.id, { ...pMap.get(p.id)!, isHost: true });
+                }
               });
             }
 
-            let finalChatMessages = mr.chatMessages;
-            if (sbData?.chat_messages && sbData.chat_messages.length > 0) {
-              finalChatMessages = sbData.chat_messages;
-            }
-            if (local?.chatMessages && local.chatMessages.length >= (finalChatMessages?.length || 0)) {
-              finalChatMessages = local.chatMessages;
-            }
-            if (extra?.chatMessages && extra.chatMessages.length >= (finalChatMessages?.length || 0)) {
-              finalChatMessages = extra.chatMessages;
-            }
+            const msgMap = new Map<string, ChatMessage>();
+            (mr.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
+            (sbData?.chat_messages || []).forEach((m) => msgMap.set(m.id, m));
+            (local?.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
+            (extra?.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
 
             const mergedRoom: Room = {
               ...mr,
               participants: Array.from(pMap.values()),
-              chatMessages: finalChatMessages || [],
+              chatMessages: Array.from(msgMap.values()),
             };
             mergedRoom.status = calculateRoomStatus(mergedRoom);
             return mergedRoom;
@@ -958,7 +1039,7 @@ export const roomService = {
     user: UserProfile
   ): Promise<{ room: Room; success: boolean; message?: string }> {
     const rooms = getLocalRooms();
-    let roomIndex = rooms.findIndex((r) => r.id === roomId);
+    let roomIndex = rooms.findIndex((r) => isRoomMatch(r.id, roomId));
 
     let room: Room;
     if (roomIndex === -1) {
@@ -1006,7 +1087,11 @@ export const roomService = {
       isSystem: true,
     };
 
-    const updatedParticipants = [...room.participants, newParticipant];
+    const pMap = new Map<string, Participant>();
+    (room.participants || []).forEach((p) => pMap.set(p.id, p));
+    pMap.set(newParticipant.id, newParticipant);
+    const updatedParticipants = Array.from(pMap.values());
+
     const updatedMessages = [...(room.chatMessages || []), joinSystemMessage];
 
     const updatedRoom: Room = {
@@ -1018,37 +1103,50 @@ export const roomService = {
 
     rooms[roomIndex] = updatedRoom;
     saveLocalRooms(rooms);
-    saveRoomExtra(roomId, {
+    saveRoomExtra(room.id, {
       participants: updatedParticipants,
       chatMessages: updatedMessages,
     });
+    if (roomId !== room.id) {
+      saveRoomExtra(roomId, {
+        participants: updatedParticipants,
+        chatMessages: updatedMessages,
+      });
+    }
 
     if (isSupabaseConfigured) {
       (async () => {
         try {
-          const boardIdNum = roomId.startsWith('board-') ? Number(roomId.replace('board-', '')) : null;
-          if (boardIdNum && !isNaN(boardIdNum)) {
-            await supabase
-              .from('participants')
-              .insert({
-                board_id: boardIdNum,
-                user_id: user.id,
-              });
-          }
+          const boardIdNum = roomId.startsWith('board-')
+            ? Number(roomId.replace('board-', ''))
+            : Number(room.id.replace('board-', ''));
 
-          await supabase
-            .from('rooms')
-            .upsert({
-              id: roomId,
-              title: updatedRoom.title,
-              description: updatedRoom.description,
-              category: updatedRoom.category,
-              creator: updatedRoom.creator,
-              participants: updatedRoom.participants,
-              chat_messages: updatedRoom.chatMessages,
-              status: updatedRoom.status,
-              max_participants: updatedRoom.maxParticipants,
-            });
+          if (!isNaN(boardIdNum)) {
+            let authUserId = user.id;
+            try {
+              const { data: { user: sbUser } } = await supabase.auth.getUser();
+              if (sbUser?.id) authUserId = sbUser.id;
+            } catch {
+              // ignore
+            }
+
+            if (authUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authUserId)) {
+              const { data: existingPart } = await supabase
+                .from('participants')
+                .select('id')
+                .match({ board_id: boardIdNum, user_id: authUserId })
+                .maybeSingle();
+
+              if (!existingPart) {
+                await supabase
+                  .from('participants')
+                  .insert({
+                    board_id: boardIdNum,
+                    user_id: authUserId,
+                  });
+              }
+            }
+          }
         } catch (sbErr) {
           console.warn('[roomService] Supabase joinRoom sync note:', sbErr);
         }
@@ -1056,7 +1154,10 @@ export const roomService = {
     }
 
     // Broadcast online to all connected accounts!
-    realtimeService.broadcastRoomJoined(roomId, newParticipant, joinSystemMessage);
+    realtimeService.broadcastRoomJoined(room.id, newParticipant, joinSystemMessage, updatedParticipants);
+    if (roomId !== room.id) {
+      realtimeService.broadcastRoomJoined(roomId, newParticipant, joinSystemMessage, updatedParticipants);
+    }
 
     return { room: updatedRoom, success: true };
   },
@@ -1070,7 +1171,7 @@ export const roomService = {
     userName = 'เพื่อนร่วมห้อง'
   ): Promise<Room | null> {
     const rooms = getLocalRooms();
-    const roomIndex = rooms.findIndex((r) => r.id === roomId);
+    const roomIndex = rooms.findIndex((r) => isRoomMatch(r.id, roomId));
 
     if (roomIndex === -1) return null;
 
@@ -1100,6 +1201,13 @@ export const roomService = {
     saveLocalRooms(rooms);
 
     const extras = getRoomExtras();
+    if (extras[room.id]) {
+      extras[room.id] = {
+        participants: updatedParticipants,
+        chatMessages: updatedMessages,
+      };
+      localStorage.setItem(ROOM_EXTRAS_KEY, JSON.stringify(extras));
+    }
     if (extras[roomId]) {
       extras[roomId] = {
         participants: updatedParticipants,
@@ -1111,20 +1219,16 @@ export const roomService = {
     if (isSupabaseConfigured) {
       (async () => {
         try {
-          const boardIdNum = roomId.startsWith('board-') ? Number(roomId.replace('board-', '')) : null;
-          if (boardIdNum && !isNaN(boardIdNum)) {
+          const boardIdNum = roomId.startsWith('board-')
+            ? Number(roomId.replace('board-', ''))
+            : Number(room.id.replace('board-', ''));
+
+          if (!isNaN(boardIdNum)) {
             await supabase
               .from('participants')
               .delete()
               .match({ board_id: boardIdNum, user_id: userId });
           }
-          await supabase
-            .from('rooms')
-            .update({
-              participants: updatedParticipants,
-              chat_messages: updatedMessages,
-            })
-            .eq('id', roomId);
         } catch (err) {
           console.warn('[roomService] Supabase leaveRoom sync note:', err);
         }
@@ -1132,7 +1236,10 @@ export const roomService = {
     }
 
     // Broadcast online to all connected accounts!
-    realtimeService.broadcastRoomLeft(roomId, userId, leaveMessage);
+    realtimeService.broadcastRoomLeft(room.id, userId, leaveMessage);
+    if (roomId !== room.id) {
+      realtimeService.broadcastRoomLeft(roomId, userId, leaveMessage);
+    }
 
     return updatedRoom;
   },

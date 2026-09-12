@@ -5,6 +5,7 @@ import { BoardComments } from '../chat/BoardComments';
 import { RoomDetailSkeleton, ErrorState } from '../common/skeletons';
 import { formatRemainingTime, getStatusDetails, maskStudentId } from '../../utils/helpers';
 import { CATEGORY_METADATA } from '../../data/mockData';
+import { isRoomMatch } from '../../services';
 import {
   ArrowLeft,
   Clock,
@@ -52,7 +53,7 @@ export const RoomDetailView: React.FC = () => {
     }
   }, [paramRoomId, selectedRoomId, setSelectedRoomId]);
 
-  const room = rooms.find((r) => r.id === currentRoomId);
+  const room = rooms.find((r) => isRoomMatch(r.id, currentRoomId));
 
   if (isLoadingRooms) {
     return <RoomDetailSkeleton />;
@@ -389,42 +390,102 @@ export const RoomDetailView: React.FC = () => {
             </div>
           </div>
 
-          {/* Members List Card - Frosted */}
+          {/* Members List Card - Frosted with Live Realtime Updates */}
           <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-6 border border-white/80 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#2D2D2D] font-kanit flex items-center gap-2">
-                <Users className="w-5 h-5 text-[#8B1D1D]" />
-                <span>สมาชิกในห้อง ({room.participants.length}/{room.maxParticipants} คน)</span>
-              </h3>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-[#8B1D1D]/10 text-[#8B1D1D] flex items-center justify-center border border-[#8B1D1D]/20 shadow-2xs">
+                  <Users className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#2D2D2D] font-kanit flex items-center gap-2">
+                    <span>สมาชิกในบอร์ด ({room.participants.length}/{room.maxParticipants} คน)</span>
+                  </h3>
+                  <p className="text-[11px] text-[#666]">
+                    {room.participants.length >= room.maxParticipants
+                      ? '🔴 สมาชิกครบตามจำนวนแล้ว'
+                      : `🟢 ว่างอีก ${room.maxParticipants - room.participants.length} ที่นั่ง`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 text-[11px] font-semibold shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>อัปเดตสดแบบ Realtime</span>
+              </div>
+            </div>
+
+            {/* Capacity Progress Bar */}
+            <div className="w-full bg-stone-200/70 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  room.participants.length >= room.maxParticipants
+                    ? 'bg-rose-500'
+                    : room.participants.length >= room.maxParticipants - 1
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.round((room.participants.length / room.maxParticipants) * 100))}%`,
+                }}
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {room.participants.map((p) => {
+                const isCurrent = currentUser && currentUser.id === p.id;
                 return (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 backdrop-blur-xs border border-white/80 shadow-2xs"
+                    className={`flex items-center gap-3 p-3 rounded-2xl backdrop-blur-xs border transition-all duration-300 shadow-2xs ${
+                      isCurrent
+                        ? 'bg-amber-50/90 border-amber-200/90 ring-1 ring-amber-300/60'
+                        : 'bg-white/60 hover:bg-white/85 border-white/80'
+                    }`}
                   >
-                    <img
-                      src={p.avatar}
-                      alt={p.name}
-                      className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-2xs"
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={p.avatar}
+                        alt={p.name}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-2xs"
+                      />
+                      {p.isHost && (
+                        <div
+                          className="absolute -top-1 -right-1 w-4.5 h-4.5 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-xs border border-white"
+                          title="ผู้สร้างบอร์ด (Host)"
+                        >
+                          <Crown className="w-2.5 h-2.5 fill-amber-950" />
+                        </div>
+                      )}
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-[#2D2D2D] truncate">{p.name}</span>
-                        {p.isHost && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">
-                            <Crown className="w-2.5 h-2.5" /> Host
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-[#2D2D2D] truncate">
+                          {p.name} {isCurrent && <span className="text-[#8B1D1D] font-normal">(คุณ)</span>}
+                        </span>
+                        {p.isHost ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-bold border border-amber-200">
+                            Host
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 text-[9px] font-bold border border-emerald-200">
+                            Member
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-[#666] truncate">{p.faculty}</p>
+                      <p className="text-[11px] text-[#666] truncate font-medium">{p.faculty}</p>
                       <p className="text-[10px] text-[#888]">{maskStudentId(p.studentId)}</p>
                     </div>
                   </div>
                 );
               })}
+
+              {/* Slot remaining teaser */}
+              {room.participants.length < room.maxParticipants && (
+                <div className="flex items-center justify-center p-3 rounded-2xl border-2 border-dashed border-stone-300/80 bg-white/20 text-stone-500 text-xs font-medium">
+                  <span>+ ว่างอีก {room.maxParticipants - room.participants.length} ที่สำหรับเพื่อนใหม่</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

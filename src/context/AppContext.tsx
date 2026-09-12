@@ -26,6 +26,7 @@ import {
   getLocalRooms,
   getLocalUser,
   saveRoomExtra,
+  isRoomMatch,
 } from '../services';
 import { supabase, isSupabaseConfigured, testSupabaseConnection } from '../lib/supabaseClient';
 
@@ -69,7 +70,7 @@ interface AppContextType {
   rooms: Room[];
   isLoadingRooms: boolean;
   roomsError: string | null;
-  refreshRooms: () => Promise<void>;
+  refreshRooms: (silent?: boolean) => Promise<void>;
   universityActivities: UniversityActivity[];
   currentUser: UserProfile;
   notifications: NotificationItem[];
@@ -222,8 +223,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoadingRooms, setIsLoadingRooms] = useState<boolean>(true);
   const [roomsError, setRoomsError] = useState<string | null>(null);
 
-  const refreshRooms = async () => {
-    setIsLoadingRooms(true);
+  const refreshRooms = async (silent = false) => {
+    if (!silent) setIsLoadingRooms(true);
     setRoomsError(null);
     try {
       const freshRooms = await roomService.getRooms();
@@ -234,9 +235,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const errMsg =
         err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลห้องได้ กรุณาลองใหม่อีกครั้ง';
       console.error('[AppContext] Failed to load rooms:', err);
-      setRoomsError(errMsg);
+      if (!silent) setRoomsError(errMsg);
     } finally {
-      setIsLoadingRooms(false);
+      if (!silent) setIsLoadingRooms(false);
     }
   };
 
@@ -375,11 +376,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       onNewComment: (roomId, message) => {
         setRooms((prev) =>
           prev.map((r) => {
-            if (r.id === roomId) {
+            if (isRoomMatch(r.id, roomId)) {
               const curMessages = r.chatMessages || [];
               if (curMessages.some((m) => m.id === message.id)) return r;
               const updated = [...curMessages, message];
-              saveRoomExtra(roomId, { chatMessages: updated });
+              saveRoomExtra(r.id, { chatMessages: updated });
               return { ...r, chatMessages: updated };
             }
             return r;
@@ -389,12 +390,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       onDeleteComment: (roomId, messageId) => {
         setRooms((prev) =>
           prev.map((r) => {
-            if (r.id === roomId) {
+            if (isRoomMatch(r.id, roomId)) {
               const curMessages = r.chatMessages || [];
               const updated = curMessages.filter(
                 (m) => m.id !== messageId && m.replyToId !== messageId
               );
-              saveRoomExtra(roomId, { chatMessages: updated });
+              saveRoomExtra(r.id, { chatMessages: updated });
               return { ...r, chatMessages: updated };
             }
             return r;
@@ -404,24 +405,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       onToggleLike: (roomId, messageId, likedBy, likesCount) => {
         setRooms((prev) =>
           prev.map((r) => {
-            if (r.id === roomId) {
+            if (isRoomMatch(r.id, roomId)) {
               const curMessages = r.chatMessages || [];
               const updated = curMessages.map((m) =>
                 m.id === messageId ? { ...m, likedBy, likesCount } : m
               );
-              saveRoomExtra(roomId, { chatMessages: updated });
+              saveRoomExtra(r.id, { chatMessages: updated });
               return { ...r, chatMessages: updated };
             }
             return r;
           })
         );
       },
-      onRoomJoined: (roomId, participant, joinMessage) => {
+      onRoomJoined: (roomId, participant, joinMessage, fullParticipants) => {
         setRooms((prev) =>
           prev.map((r) => {
-            if (r.id === roomId) {
+            if (isRoomMatch(r.id, roomId)) {
               const pMap = new Map<string, Participant>();
               (r.participants || []).forEach((p) => pMap.set(p.id, p));
+              if (fullParticipants && Array.isArray(fullParticipants)) {
+                fullParticipants.forEach((p) => pMap.set(p.id, p));
+              }
               pMap.set(participant.id, participant);
               const updatedParticipants = Array.from(pMap.values());
 
@@ -430,7 +434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ? curMessages
                 : [...curMessages, joinMessage];
 
-              saveRoomExtra(roomId, {
+              saveRoomExtra(r.id, {
                 participants: updatedParticipants,
                 chatMessages: updatedMessages,
               });
@@ -446,18 +450,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return r;
           })
         );
+        showToast(`🎉 ${participant.name} ได้เข้าร่วมห้องแล้ว!`);
       },
       onRoomLeft: (roomId, userId, leaveMessage) => {
         setRooms((prev) =>
           prev.map((r) => {
-            if (r.id === roomId) {
+            if (isRoomMatch(r.id, roomId)) {
               const updatedParticipants = (r.participants || []).filter((p) => p.id !== userId);
               const curMessages = r.chatMessages || [];
               const updatedMessages = curMessages.some((m) => m.id === leaveMessage.id)
                 ? curMessages
                 : [...curMessages, leaveMessage];
 
-              saveRoomExtra(roomId, {
+              saveRoomExtra(r.id, {
                 participants: updatedParticipants,
                 chatMessages: updatedMessages,
               });
@@ -476,17 +481,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       onRoomCreated: (newRoom) => {
         setRooms((prev) => {
-          if (prev.some((r) => r.id === newRoom.id)) return prev;
+          if (prev.some((r) => isRoomMatch(r.id, newRoom.id))) return prev;
           return [newRoom, ...prev];
         });
       },
       onRoomUpdated: (updatedRoom) => {
         setRooms((prev) =>
-          prev.map((r) => (r.id === updatedRoom.id ? { ...r, ...updatedRoom } : r))
+          prev.map((r) => (isRoomMatch(r.id, updatedRoom.id) ? { ...r, ...updatedRoom } : r))
         );
       },
       onDatabaseUpdate: () => {
-        refreshRooms();
+        refreshRooms(true);
       },
     });
 
@@ -681,7 +686,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    const room = rooms.find((r) => r.id === roomId);
+    const room = rooms.find((r) => isRoomMatch(r.id, roomId));
     if (!room) return false;
 
     // Check if already in
@@ -712,7 +717,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isHost: false,
     };
 
-    const updatedParticipants = [...room.participants, newParticipant];
+    const pMap = new Map<string, Participant>();
+    (room.participants || []).forEach((p) => pMap.set(p.id, p));
+    pMap.set(newParticipant.id, newParticipant);
+    const updatedParticipants = Array.from(pMap.values());
 
     const joinSystemMessage: ChatMessage = {
       id: `sys-${Date.now()}`,
@@ -726,14 +734,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedMessages = [...(room.chatMessages || []), joinSystemMessage];
 
-    saveRoomExtra(roomId, {
+    saveRoomExtra(room.id, {
       participants: updatedParticipants,
       chatMessages: updatedMessages,
     });
+    if (roomId !== room.id) {
+      saveRoomExtra(roomId, {
+        participants: updatedParticipants,
+        chatMessages: updatedMessages,
+      });
+    }
 
     setRooms((prev) =>
       prev.map((r) => {
-        if (r.id === roomId) {
+        if (isRoomMatch(r.id, roomId)) {
           const updated = {
             ...r,
             participants: updatedParticipants,
@@ -750,7 +764,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Call roomService to persist join
     roomService
-      .joinRoom(roomId, currentUser)
+      .joinRoom(room.id, currentUser)
       .catch((err) => console.warn('[AppContext] joinRoom service error:', err));
 
     // Add notification for creator if not self
@@ -772,7 +786,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const leaveRoom = (roomId: string) => {
-    const room = rooms.find((r) => r.id === roomId);
+    const room = rooms.find((r) => isRoomMatch(r.id, roomId));
     if (!room) return;
 
     const updatedParticipants = room.participants.filter((p) => p.id !== currentUser.id);
@@ -789,14 +803,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedMessages = [...(room.chatMessages || []), leaveMessage];
 
-    saveRoomExtra(roomId, {
+    saveRoomExtra(room.id, {
       participants: updatedParticipants,
       chatMessages: updatedMessages,
     });
+    if (roomId !== room.id) {
+      saveRoomExtra(roomId, {
+        participants: updatedParticipants,
+        chatMessages: updatedMessages,
+      });
+    }
 
     setRooms((prev) =>
       prev.map((r) => {
-        if (r.id === roomId) {
+        if (isRoomMatch(r.id, roomId)) {
           const updated = {
             ...r,
             participants: updatedParticipants,
@@ -813,7 +833,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Call roomService to persist leave
     roomService
-      .leaveRoom(roomId, currentUser.id, currentUser.name)
+      .leaveRoom(room.id, currentUser.id, currentUser.name)
       .catch((err) => console.warn('[AppContext] leaveRoom service error:', err));
 
     showToast('ออกจากห้องเรียบร้อยแล้ว');
