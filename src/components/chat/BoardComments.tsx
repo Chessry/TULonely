@@ -346,18 +346,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     <CornerDownRight className="w-3.5 h-3.5" />
                     <span>ตอบกลับ</span>
                   </button>
-
-                  {isMine && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteComment(comment.id)}
-                      className="inline-flex items-center gap-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-rose-50 ml-auto"
-                      title="ลบความคิดเห็นของคุณ"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>ลบ</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* Nested Replies Section: Rendered directly INSIDE the parent comment */}
@@ -478,18 +466,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                               <CornerDownRight className="w-3 h-3" />
                               <span>ตอบกลับ</span>
                             </button>
-
-                            {isReplyMine && (
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteComment(reply.id)}
-                                className="inline-flex items-center gap-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-rose-50 ml-auto"
-                                title="ลบการตอบกลับของคุณ"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                <span>ลบ</span>
-                              </button>
-                            )}
                           </div>
                         </div>
                       );
