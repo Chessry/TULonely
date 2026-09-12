@@ -13,13 +13,33 @@ export interface RoomExtraData {
   chatMessages?: ChatMessage[];
 }
 
+export const isMockRoom = (r: Room): boolean => {
+  if (!r || !r.id) return true;
+  if (/^room-(freshy|food|sports|study|ent|openhouse)-/.test(r.id)) return true;
+  if (r.creator?.id === 'user-me-noah' || r.creator?.name === 'Noah') return true;
+  return false;
+};
+
 /**
  * Get extras (participants & chat messages) saved per room
  */
 export const getRoomExtras = (): Record<string, RoomExtraData> => {
   try {
     const raw = localStorage.getItem(ROOM_EXTRAS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: Record<string, RoomExtraData> = JSON.parse(raw);
+      let changed = false;
+      Object.keys(parsed).forEach((k) => {
+        if (/^room-(freshy|food|sports|study|ent|openhouse)-/.test(k)) {
+          delete parsed[k];
+          changed = true;
+        }
+      });
+      if (changed) {
+        localStorage.setItem(ROOM_EXTRAS_KEY, JSON.stringify(parsed));
+      }
+      return parsed;
+    }
   } catch (err) {
     console.warn('[roomService] Error reading room extras:', err);
   }
@@ -80,6 +100,12 @@ export const getLocalRooms = (): Room[] => {
       rooms = JSON.parse(raw);
     } else {
       rooms = INITIAL_ROOMS;
+    }
+
+    const originalCount = rooms.length;
+    rooms = rooms.filter((r) => !isMockRoom(r));
+    if (rooms.length !== originalCount) {
+      saveLocalRooms(rooms);
     }
 
     return rooms.map((r) => {
@@ -471,7 +497,7 @@ export const roomService = {
           const combined = [
             ...mappedRooms,
             ...localRooms.filter((lr) => !mappedRooms.some((mr) => mr.id === lr.id)),
-          ];
+          ].filter((r) => !isMockRoom(r));
           saveLocalRooms(combined);
           return combined;
         }
@@ -542,7 +568,7 @@ export const roomService = {
           const combined = [
             ...mappedRooms,
             ...localRooms.filter((lr) => !mappedRooms.some((mr) => mr.id === lr.id)),
-          ];
+          ].filter((r) => !isMockRoom(r));
           saveLocalRooms(combined);
           return combined;
         }

@@ -114,7 +114,7 @@ export const ProfileView: React.FC = () => {
 
   // Edit form state
   const [name, setName] = useState(currentUser.name);
-  const [fullName, setFullName] = useState(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
+  const [fullName, setFullName] = useState(currentUser.fullName || '');
   const [bio, setBio] = useState(currentUser.bio || '');
   const [faculty, setFaculty] = useState(currentUser.faculty);
   const [campus, setCampus] = useState(currentUser.campus);
@@ -130,7 +130,7 @@ export const ProfileView: React.FC = () => {
   // Sync edit form with currentUser updates
   React.useEffect(() => {
     setName(currentUser.name);
-    setFullName(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
+    setFullName(currentUser.fullName || '');
     setBio(currentUser.bio || '');
     setFaculty(currentUser.faculty);
     setCampus(currentUser.campus);
@@ -196,7 +196,7 @@ export const ProfileView: React.FC = () => {
 
   const handleCancelEdit = () => {
     setName(currentUser.name);
-    setFullName(currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์');
+    setFullName(currentUser.fullName || '');
     setBio(currentUser.bio || '');
     setFaculty(currentUser.faculty);
     setCampus(currentUser.campus);
@@ -234,7 +234,7 @@ export const ProfileView: React.FC = () => {
 
     updateUserProfile({
       name: name.trim() || currentUser.name,
-      fullName: fullName.trim() || currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์',
+      fullName: fullName.trim() || currentUser.fullName || '',
       bio: bio.trim(),
       faculty,
       campus,
@@ -300,81 +300,7 @@ export const ProfileView: React.FC = () => {
             </button>
           </div>
 
-          {/* 1-Click Fast Demo Accounts for testing */}
-          <div className="pt-4 border-t border-white/70">
-            <p className="text-xs text-[#777] font-medium mb-3 flex items-center justify-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>หรือเข้าสู่ระบบด่วนด้วยบัญชีตัวอย่าง (1-Click Demo):</span>
-            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
-              <button
-                type="button"
-                onClick={() =>
-                  login({
-                    studentId: '6702610012',
-                    name: 'น้องนวมินทร์ Freshy',
-                    email: 'nawamin.tu67@dome.tu.ac.th',
-                  })
-                }
-                className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-white/60 hover:bg-white backdrop-blur-xs border border-white/80 shadow-2xs hover:border-[#8B1D1D]/40 transition-all text-left cursor-pointer"
-              >
-                <img
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
-                  alt="Nawamin"
-                  className="w-8 h-8 rounded-full object-cover border border-white"
-                />
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-[#2D2D2D] truncate">น้องนวมินทร์</p>
-                  <p className="text-[10px] text-[#777] truncate">TBS ปี 1 (มธ.67)</p>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  login({
-                    studentId: '6609650084',
-                    name: 'Noah TSE',
-                    email: 'noah.tse66@dome.tu.ac.th',
-                  })
-                }
-                className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-white/60 hover:bg-white backdrop-blur-xs border border-white/80 shadow-2xs hover:border-[#8B1D1D]/40 transition-all text-left cursor-pointer"
-              >
-                <img
-                  src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&auto=format&fit=crop&q=80"
-                  alt="Noah"
-                  className="w-8 h-8 rounded-full object-cover border border-white"
-                />
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-[#2D2D2D] truncate">Noah TSE</p>
-                  <p className="text-[10px] text-[#777] truncate">วิศวะ ปี 3 (มธ.65)</p>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  login({
-                    studentId: '6501650341',
-                    name: 'ฟ้าใส ศิลปศาสตร์',
-                    email: 'fahhsai.arts@dome.tu.ac.th',
-                  })
-                }
-                className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-white/60 hover:bg-white backdrop-blur-xs border border-white/80 shadow-2xs hover:border-[#8B1D1D]/40 transition-all text-left cursor-pointer"
-              >
-                <img
-                  src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80"
-                  alt="Fahsai"
-                  className="w-8 h-8 rounded-full object-cover border border-white"
-                />
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-[#2D2D2D] truncate">ฟ้าใส ศิลปศาสตร์</p>
-                  <p className="text-[10px] text-[#777] truncate">ศิลปศาสตร์ ปี 2</p>
-                </div>
-              </button>
-            </div>
-          </div>
 
           {/* Benefits Feature Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-left border-t border-white/60">
@@ -452,7 +378,7 @@ export const ProfileView: React.FC = () => {
                 <span>•</span>
                 <span>รหัสนักศึกษา: {maskStudentId(currentUser.studentId)}</span>
                 <span>•</span>
-                <span>ชื่อจริง - นามสกุล: <span className="font-semibold text-[#2D2D2D]">{currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์'}</span></span>
+                <span>ชื่อจริง - นามสกุล: <span className="font-semibold text-[#2D2D2D]">{currentUser.fullName || currentUser.name || '-'}</span></span>
                 <span>•</span>
                 <span>มธ. {currentUser.campus}</span>
               </div>
@@ -540,7 +466,7 @@ export const ProfileView: React.FC = () => {
                     type="text"
                     disabled
                     readOnly
-                    value={currentUser.fullName || 'ณภัทร ปิติเจริญวงศ์'}
+                    value={currentUser.fullName || currentUser.name || ''}
                     className="w-full bg-black/5 border border-white/60 rounded-2xl px-3.5 py-2 text-xs text-[#666] cursor-not-allowed select-none font-medium shadow-inner"
                   />
                   <Lock className="w-3.5 h-3.5 text-[#999] absolute right-3.5 top-1/2 -translate-y-1/2" />

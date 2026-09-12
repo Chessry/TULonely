@@ -23,6 +23,8 @@ export interface AuthResponse {
   token: string;
 }
 
+const DEMO_USER_IDS = new Set(['user-me-noah', 'user-demo-1', 'user-demo-2', 'user-demo-3']);
+
 /**
  * Helper to get local user from localStorage or fallback to default
  */
@@ -30,7 +32,22 @@ export const getLocalUser = (): UserProfile => {
   try {
     const raw = localStorage.getItem(USER_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw) as UserProfile;
+      const parsed = JSON.parse(raw) as UserProfile;
+      if (
+        DEMO_USER_IDS.has(parsed.id) ||
+        parsed.name === 'Noah' ||
+        parsed.fullName === 'ณภัทร ปิติเจริญวงศ์' ||
+        parsed.email === 'noah.p@dome.tu.ac.th' ||
+        parsed.name === 'Noah TSE' ||
+        parsed.name === 'น้องนวมินทร์ Freshy' ||
+        parsed.name === 'น้องนวมินทร์' ||
+        parsed.name === 'ฟ้าใส ศิลปศาสตร์'
+      ) {
+        localStorage.removeItem(USER_STORAGE_KEY);
+        localStorage.removeItem(LOGGED_IN_STORAGE_KEY);
+        return INITIAL_USER;
+      }
+      return parsed;
     }
   } catch (err) {
     console.warn('[authService] Error parsing local user:', err);
@@ -98,14 +115,14 @@ const buildProfileFromSupabaseUser = (sbUser: { id: string; email?: string; user
     id: sbUser.id,
     name: userName,
     fullName: realName,
-    studentId: (meta.studentId as string) || (meta.student_id as string) || local.studentId || '660965xxxx',
-    email: sbUser.email || local.email,
-    faculty: (meta.faculty as string) || local.faculty || 'วิศวกรรมศาสตร์ (TSE)',
-    year: (meta.year as string) || local.year || 'ปี 2',
+    studentId: (meta.studentId as string) || (meta.student_id as string) || local.studentId || '',
+    email: sbUser.email || local.email || '',
+    faculty: (meta.faculty as string) || local.faculty || 'มหาวิทยาลัยธรรมศาสตร์',
+    year: (meta.year as string) || local.year || 'ปี 1',
     campus: (meta.campus as string) || local.campus || 'ศูนย์รังสิต',
     bio: (meta.bio as string) ?? null,
-    avatar: (meta.avatar as string) || (meta.avatar_url as string) || local.avatar,
-    interests: Array.isArray(meta.interests) ? (meta.interests as string[]) : local.interests || ['#หาเพื่อน'],
+    avatar: (meta.avatar as string) || (meta.avatar_url as string) || local.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    interests: Array.isArray(meta.interests) ? (meta.interests as string[]) : local.interests || [],
     favoriteRooms: Array.isArray(meta.favoriteRooms) ? (meta.favoriteRooms as string[]) : local.favoriteRooms || [],
     favoriteActivities: Array.isArray(meta.favoriteActivities) ? (meta.favoriteActivities as string[]) : local.favoriteActivities || [],
   };
@@ -210,11 +227,12 @@ export const authService = {
     return apiClient.get<UserProfile | null>(
       '/auth/me',
       () => {
+        const local = getLocalUser();
         const isLoggedIn = localStorage.getItem(LOGGED_IN_STORAGE_KEY) === 'true';
-        if (!isLoggedIn) {
+        if (!isLoggedIn || !local.id) {
           return null;
         }
-        return getLocalUser();
+        return local;
       }
     );
   },

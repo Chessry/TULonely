@@ -131,8 +131,14 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Auth state - check localStorage for first-time use
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const localUser = getLocalUser();
+    if (!localUser.id || localUser.id === 'user-me-noah') {
+      localStorage.removeItem('tulonely_is_logged_in');
+      localStorage.removeItem('tulonely_user');
+      return false;
+    }
     const saved = localStorage.getItem('tulonely_is_logged_in');
-    return saved !== null ? saved === 'true' : false; // Defaults to false on first time so onboarding is presented
+    return saved !== null ? saved === 'true' : false;
   });
 
   // Router hooks
@@ -237,7 +243,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem('tulonely_notifs');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((n: NotificationItem) => !n.id.startsWith('notif-'));
+          localStorage.setItem('tulonely_notifs', JSON.stringify(filtered));
+          return filtered;
+        }
       } catch (e) {
         console.error(e);
       }
