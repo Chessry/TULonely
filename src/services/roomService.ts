@@ -569,10 +569,26 @@ export const roomService = {
             }
 
             const msgMap = new Map<string, ChatMessage>();
-            (mr.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
+            // 1. Supabase comments are canonical
             (sbData?.chat_messages || []).forEach((m) => msgMap.set(m.id, m));
-            (local?.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
-            (extra?.chatMessages || []).forEach((m) => msgMap.set(m.id, m));
+            (mr.chatMessages || []).forEach((m) => {
+              if (!msgMap.has(m.id)) msgMap.set(m.id, m);
+            });
+
+            // 2. Only add local/extra messages if not already represented in Supabase
+            const isRepresentedInSb = (localMsg: ChatMessage) =>
+              Array.from(msgMap.values()).some(
+                (sm) =>
+                  sm.id === localMsg.id ||
+                  (sm.senderId === localMsg.senderId && sm.text.trim() === localMsg.text.trim())
+              );
+
+            (local?.chatMessages || []).forEach((m) => {
+              if (!isRepresentedInSb(m)) msgMap.set(m.id, m);
+            });
+            (extra?.chatMessages || []).forEach((m) => {
+              if (!isRepresentedInSb(m)) msgMap.set(m.id, m);
+            });
 
             const mergedRoom: Room = {
               ...mr,

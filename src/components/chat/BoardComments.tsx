@@ -57,29 +57,43 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
    * Helper to extract numeric commentId (int8) from ChatMessage
    */
   const getNumericCommentId = (msg: ChatMessage): number | null => {
+    // 1. Direct commentId
     if (typeof msg.commentId === 'number' && msg.commentId > 0) {
       return msg.commentId;
     }
+    // 2. Parse from 'comment-11' or '11'
     const match = msg.id.replace(/^comment-/, '');
     const parsed = Number(match);
     if (!isNaN(parsed) && parsed > 0 && !msg.id.startsWith('msg-')) {
       return parsed;
     }
+    // 3. Fallback: match by content and sender from allComments that have real IDs
+    const matched = allComments.find(
+      (c) =>
+        (typeof c.commentId === 'number' || (!c.id.startsWith('msg-') && !isNaN(Number(c.id.replace(/^comment-/, ''))))) &&
+        c.text.trim() === msg.text.trim() &&
+        c.senderId === msg.senderId
+    );
+    if (matched) {
+      if (typeof matched.commentId === 'number' && matched.commentId > 0) {
+        return matched.commentId;
+      }
+      const p = Number(matched.id.replace(/^comment-/, ''));
+      if (!isNaN(p) && p > 0) return p;
+    }
     return null;
   };
 
   /**
-   * Start replying to a comment or a nested reply
-   * @param target The message being replied to (for name mention)
-   * @param parentComment Optional top-level comment to nest under
+   * Start replying to any comment (top-level comment or nested reply)
+   * Stores the ID of the exact comment being replied to in parent_id
    */
-  const handleStartReply = (target: ChatMessage, parentComment?: ChatMessage) => {
-    const rootComment = parentComment || target;
-    const parentIdNum = getNumericCommentId(rootComment);
+  const handleStartReply = (target: ChatMessage) => {
+    const parentIdNum = getNumericCommentId(target);
 
     setReplyingTo({
       commentId: parentIdNum,
-      messageId: rootComment.id,
+      messageId: target.id,
       name: target.senderName,
     });
     inputRef.current?.focus();
@@ -170,18 +184,41 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     return match ? Number(match[0]) : 0;
   };
 
-  // Helper to resolve parent key for grouping
-  const getParentKey = (c: ChatMessage): string | null => {
-    if (c.parentId && c.parentId > 0) {
-      const parent = allComments.find(
-        (p) => p.commentId === c.parentId || p.id === `comment-${c.parentId}` || p.id === String(c.parentId)
-      );
-      if (parent) return parent.id;
+  // Helper to find the root top-level comment for any comment or nested reply
+  const findRootParentKey = (c: ChatMessage): string | null => {
+    const visited = new Set<string>();
+    let curr: ChatMessage = c;
+
+    while (curr) {
+      const parentNum = curr.parentId;
+      const replyId = curr.replyToId;
+
+      if (!parentNum && !replyId) {
+        return curr !== c ? curr.id : null;
+      }
+
+      const parent = allComments.find((p) => {
+        if (p.id === curr.id) return false;
+        if (parentNum && (p.commentId === parentNum || p.id === `comment-${parentNum}` || p.id === String(parentNum))) {
+          return true;
+        }
+        if (replyId && (p.id === replyId || (p.commentId && `comment-${p.commentId}` === replyId))) {
+          return true;
+        }
+        return false;
+      });
+
+      if (!parent) {
+        return curr !== c ? curr.id : null;
+      }
+
+      if (visited.has(parent.id)) {
+        return parent.id;
+      }
+      visited.add(parent.id);
+      curr = parent;
     }
-    if (c.replyToId) {
-      const parent = allComments.find((p) => p.id === c.replyToId);
-      if (parent) return parent.id;
-    }
+
     return null;
   };
 
@@ -190,11 +227,11 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
   const topLevelComments: ChatMessage[] = [];
 
   allComments.forEach((c) => {
-    const parentKey = getParentKey(c);
-    if (parentKey) {
-      const existing = repliesMap.get(parentKey) || [];
+    const rootKey = findRootParentKey(c);
+    if (rootKey) {
+      const existing = repliesMap.get(rootKey) || [];
       existing.push(c);
-      repliesMap.set(parentKey, existing);
+      repliesMap.set(rootKey, existing);
     } else {
       topLevelComments.push(c);
     }
@@ -674,7 +711,7 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
 
                             <button
                               type="button"
-                              onClick={() => handleStartReply(reply, comment)}
+                              onClick={() => handleStartReply(reply)}
                               className="inline-flex items-center gap-1 hover:text-[#8B1D1D] text-stone-600 transition-colors cursor-pointer py-0.5 px-1.5 rounded hover:bg-white/60"
                             >
                               <CornerDownRight className="w-3 h-3" />

@@ -77,6 +77,23 @@ export const chatService = {
       }
     }
 
+    // Fallback: search room.chatMessages for payload.replyTo?.id or payload.replyToId
+    if (!parentIdNum && (payload.replyTo?.id || payload.replyToId)) {
+      const targetId = payload.replyTo?.id || payload.replyToId;
+      const room = rooms.find((r) => isRoomMatch(r.id, roomId));
+      const targetMsg = (room?.chatMessages || []).find((m) => m.id === targetId);
+      if (targetMsg) {
+        if (typeof targetMsg.commentId === 'number' && targetMsg.commentId > 0) {
+          parentIdNum = targetMsg.commentId;
+        } else {
+          const parsed = Number(targetMsg.id.replace(/^comment-/, ''));
+          if (!isNaN(parsed) && parsed > 0 && !targetMsg.id.startsWith('msg-')) {
+            parentIdNum = parsed;
+          }
+        }
+      }
+    }
+
     // 2. Sync to Supabase 'comments' table
     let insertedCommentId: number | undefined;
     if (isSupabaseConfigured) {
