@@ -29,7 +29,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     setReportTarget,
     setIsReportModalOpen,
     showToast,
-    realtimeStatus,
   } = useApp();
 
   const [commentText, setCommentText] = useState('');
@@ -51,6 +50,38 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
     if (window.confirm('คุณต้องการลบความคิดเห็นนี้ใช่หรือไม่?')) {
       deleteChatMessage(room.id, commentId);
     }
+  };
+
+  /**
+   * Format comment timestamp from Supabase created_at / create_at
+   */
+  const formatCommentTime = (timeStr?: string): string => {
+    if (!timeStr) return 'เมื่อสักครู่';
+    const d = new Date(timeStr);
+    if (isNaN(d.getTime())) return timeStr;
+
+    const now = new Date();
+    const isSameDay =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    const timePart =
+      d.toLocaleTimeString('th-TH', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }) + ' น.';
+
+    if (isSameDay) {
+      return timePart;
+    }
+
+    const datePart = d.toLocaleDateString('th-TH', {
+      day: 'numeric',
+      month: 'short',
+    });
+
+    return `${datePart} ${timePart}`;
   };
 
   /**
@@ -178,10 +209,28 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
   const allComments = room.chatMessages || [];
   const hostId = room.creator.id;
 
-  // Helper to extract timestamp for ordering
+  // Helper to extract timestamp for ordering (Newest on top, Oldest on bottom)
   const getCommentTime = (c: ChatMessage): number => {
-    const match = c.id.match(/\d+/);
-    return match ? Number(match[0]) : 0;
+    // 1. Check createdAt ISO timestamp (from Supabase create_at)
+    if (c.createdAt) {
+      const t = new Date(c.createdAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    // 2. Check numeric commentId (int8)
+    if (typeof c.commentId === 'number' && c.commentId > 0) {
+      return c.commentId;
+    }
+    // 3. Check comment-X ID
+    if (c.id.startsWith('comment-')) {
+      const parsed = Number(c.id.replace('comment-', ''));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    // 4. Fallback: msg- timestamp
+    if (c.id.startsWith('msg-')) {
+      const parsed = Number(c.id.replace('msg-', ''));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
   };
 
   // Helper to find the root top-level comment for any comment or nested reply
@@ -256,41 +305,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
               {allComments.length}
             </span>
           </div>
-        </div>
-
-        {/* Live Realtime Online Status Indicator */}
-        <div
-          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-semibold shadow-2xs transition-colors ${
-            realtimeStatus === 'CONNECTED'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-700'
-              : realtimeStatus === 'CONNECTING'
-              ? 'bg-amber-500/10 border-amber-500/20 text-amber-700'
-              : 'bg-stone-500/10 border-stone-500/20 text-stone-600'
-          }`}
-          title={
-            realtimeStatus === 'CONNECTED'
-              ? 'เชื่อมต่อระบบ Realtime สมบูรณ์พร้อมสนทนา'
-              : realtimeStatus === 'CONNECTING'
-              ? 'กำลังเชื่อมต่อ Realtime...'
-              : 'ออฟไลน์ (ใช้งานระบบซิงค์ภายในเครื่อง)'
-          }
-        >
-          <span
-            className={`w-2 h-2 rounded-full ${
-              realtimeStatus === 'CONNECTED'
-                ? 'bg-emerald-500 animate-pulse'
-                : realtimeStatus === 'CONNECTING'
-                ? 'bg-amber-500 animate-ping'
-                : 'bg-stone-400'
-            }`}
-          />
-          <span>
-            {realtimeStatus === 'CONNECTED'
-              ? 'ออนไลน์แบบ Realtime'
-              : realtimeStatus === 'CONNECTING'
-              ? 'กำลังเชื่อมต่อ...'
-              : 'ออฟไลน์ (Local)'}
-          </span>
         </div>
       </div>
 
@@ -445,7 +459,9 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                         )}
                       </div>
 
-                      <span className="text-[10px] text-[#888]">{comment.timestamp}</span>
+                      <span className="text-[10px] text-[#888]">
+                        {comment.createdAt ? formatCommentTime(comment.createdAt) : (comment.timestamp || 'เมื่อสักครู่')}
+                      </span>
                     </div>
                   </div>
 
@@ -598,7 +614,9 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-[9px] text-[#888]">{reply.timestamp}</span>
+                                <span className="text-[9px] text-[#888]">
+                                  {reply.createdAt ? formatCommentTime(reply.createdAt) : (reply.timestamp || 'เมื่อสักครู่')}
+                                </span>
                               </div>
                             </div>
 

@@ -29,6 +29,7 @@ export interface ChatMessage {
   senderFaculty?: string;
   text: string;
   timestamp: string;
+  createdAt?: string;
   isSystem?: boolean;
   sticker?: string;
   replyToId?: string;

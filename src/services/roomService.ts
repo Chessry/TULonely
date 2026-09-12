@@ -492,6 +492,7 @@ export const roomService = {
                 const bId = `board-${c.board_id}`;
                 const existing = supabaseRoomsMap.get(bId) || { participants: [], chat_messages: [] };
                 const prof = c.profile;
+                const rawCreatedAt = c.created_at || c.create_at;
                 const cMsg: ChatMessage = {
                   id: `comment-${c.id}`,
                   commentId: c.id,
@@ -501,8 +502,9 @@ export const roomService = {
                   senderAvatar:
                     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
                   text: c.content || '',
-                  timestamp: c.created_at
-                    ? new Date(c.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+                  createdAt: rawCreatedAt,
+                  timestamp: rawCreatedAt
+                    ? new Date(rawCreatedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.'
                     : 'เมื่อสักครู่',
                   replyToId: c.parent_id ? `comment-${c.parent_id}` : undefined,
                   isUpdated: Boolean(c.is_updated),

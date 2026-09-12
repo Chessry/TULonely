@@ -96,6 +96,7 @@ export const chatService = {
 
     // 2. Sync to Supabase 'comments' table
     let insertedCommentId: number | undefined;
+    let insertedCreatedAt: string | undefined;
     if (isSupabaseConfigured) {
       try {
         const boardIdNum = targetRoomId.startsWith('board-')
@@ -130,11 +131,12 @@ export const chatService = {
             const { data: inserted, error: insertError } = await supabase
               .from('comments')
               .insert(insertData)
-              .select('id')
+              .select('id, created_at')
               .single();
 
             if (!insertError && inserted?.id) {
               insertedCommentId = inserted.id;
+              insertedCreatedAt = inserted.created_at;
             } else if (insertError) {
               console.error('[chatService] Supabase comments insert error:', insertError.message);
             }
@@ -147,6 +149,10 @@ export const chatService = {
 
     // 3. Build ChatMessage object with definitive IDs
     const finalMsgId = insertedCommentId ? `comment-${insertedCommentId}` : `msg-${Date.now()}`;
+    const finalCreatedAt = insertedCreatedAt || new Date().toISOString();
+    const finalTimestamp =
+      new Date(finalCreatedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+
     const newMsg: ChatMessage = {
       id: finalMsgId,
       commentId: insertedCommentId,
@@ -156,7 +162,8 @@ export const chatService = {
       senderAvatar: payload.senderAvatar,
       senderFaculty: payload.senderFaculty,
       text: payload.text.trim(),
-      timestamp: 'เมื่อสักครู่',
+      createdAt: finalCreatedAt,
+      timestamp: finalTimestamp,
       sticker: payload.sticker,
       replyToId: payload.replyTo?.id || (parentIdNum ? `comment-${parentIdNum}` : undefined),
       replyToName: payload.replyTo?.name,
