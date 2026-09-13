@@ -8,7 +8,6 @@ import {
   User,
   Mail,
   GraduationCap,
-  Compass,
   Lock,
   Eye,
   EyeOff,
@@ -797,18 +796,6 @@ export const OnboardingAuthView: React.FC<OnboardingAuthViewProps> = ({ defaultM
             )}
           </div>
         )}
-      </div>
-
-      {/* Guest Mode Skip Option */}
-      <div className="text-center mt-6">
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-2 text-xs font-bold text-[#555] hover:text-[#8B1D1D] bg-white/50 hover:bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/70 shadow-2xs transition-all cursor-pointer font-kanit"
-        >
-          <Compass className="w-3.5 h-3.5 text-[#8B1D1D]" />
-          <span>ข้ามไปก่อน — สำรวจกิจกรรมและห้องหาเพื่อนในโหมดผู้เยี่ยมชม (Guest Mode) ➔</span>
-        </button>
       </div>
 
       {/* Feature Value Highlights */}

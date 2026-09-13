@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { formatRemainingTime, getStatusDetails, maskStudentId } from '../../utils/helpers';
 import { CATEGORY_METADATA } from '../../data/mockData';
 import { MapPin, Clock, Users, Heart, ArrowRight, Edit3 } from 'lucide-react';
+import { isRoomMatch } from '../../services';
 
 interface RoomCardProps {
   room: Room;
@@ -19,7 +20,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({ room, onSelect }) => {
     openEditRoomModal,
   } = useApp();
 
-  const isFavorited = currentUser.favoriteRooms.includes(room.id);
+  const isFavorited = currentUser.favoriteRooms.some((favId) => isRoomMatch(favId, room.id));
   const isMember = room.participants.some((p) => p.id === currentUser.id);
   const isHost = room.creator.id === currentUser.id;
 

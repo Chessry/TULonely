@@ -33,6 +33,7 @@ export const RoomDetailView: React.FC = () => {
     joinRoom,
     leaveRoom,
     deleteRoom,
+    updateRoom,
     toggleFavoriteRoom,
     openEditRoomModal,
     setReportTarget,
@@ -96,9 +97,21 @@ export const RoomDetailView: React.FC = () => {
     );
   }
 
-  const isFavorited = currentUser.favoriteRooms.includes(room.id);
+  const isFavorited = currentUser.favoriteRooms.some((favId) => isRoomMatch(favId, room.id));
   const isMember = room.participants.some((p) => p.id === currentUser.id);
   const isHost = room.creator.id === currentUser.id;
+  const isPaused = Boolean(room.isPaused || room.status === 'closed');
+
+  const handleToggleRecruitment = async () => {
+    if (!isHost) return;
+    const nextPaused = !isPaused;
+    await updateRoom(room.id, {
+      isPaused: nextPaused,
+      isClosed: nextPaused,
+      status: nextPaused ? 'closed' : 'open',
+    });
+    showToast(nextPaused ? 'พักรับสมาชิกเข้าบอร์ดชั่วคราวแล้ว ⏸️' : 'เปิดรับสมาชิกเข้าบอร์ดต่อเรียบร้อยแล้ว ▶️');
+  };
 
   const timeRemaining = formatRemainingTime(room.recruitmentDeadline);
   const statusDetails = getStatusDetails(room.status);
@@ -354,14 +367,40 @@ export const RoomDetailView: React.FC = () => {
                   </div>
 
                   {isHost ? (
-                    <button
-                      onClick={() => openEditRoomModal(room)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#8B1D1D] hover:bg-white/90 border border-[#8B1D1D]/30 bg-white/70 rounded-xl transition-all cursor-pointer shadow-2xs"
-                      title="แก้ไขข้อมูลบอร์ด"
-                    >
-                      <Edit3 className="w-3.5 h-3.5 text-[#8B1D1D]" />
-                      <span>แก้ไขข้อมูลบอร์ด</span>
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {!timeRemaining.isExpired && (
+                        <button
+                          type="button"
+                          onClick={handleToggleRecruitment}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-2xs ${
+                            isPaused
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                          }`}
+                          title={isPaused ? 'เปิดรับสมาชิกต่อ' : 'พักรับคนเข้าบอร์ด'}
+                        >
+                          {isPaused ? (
+                            <>
+                              <span>▶️</span>
+                              <span>เปิดรับสมาชิกต่อ</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>⏸️</span>
+                              <span>พักรับสมาชิก</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openEditRoomModal(room)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#8B1D1D] hover:bg-white/90 border border-[#8B1D1D]/30 bg-white/70 rounded-xl transition-all cursor-pointer shadow-2xs"
+                        title="แก้ไขข้อมูลบอร์ด"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-[#8B1D1D]" />
+                        <span>แก้ไขข้อมูลบอร์ด</span>
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={() => leaveRoom(room.id)}
@@ -371,9 +410,13 @@ export const RoomDetailView: React.FC = () => {
                     </button>
                   )}
                 </div>
-              ) : room.status === 'expired' ? (
+              ) : timeRemaining.isExpired || room.status === 'expired' ? (
                 <div className="p-4 bg-stone-100/80 backdrop-blur-xs rounded-2xl border border-stone-300 text-center">
                   <p className="text-xs font-bold text-stone-700">⚪ ห้องนี้หมดเวลารับสมาชิกแล้ว</p>
+                </div>
+              ) : isPaused ? (
+                <div className="p-4 bg-amber-50/80 backdrop-blur-xs rounded-2xl border border-amber-200 text-center">
+                  <p className="text-xs font-bold text-amber-800">⏸️ ผู้สร้างพักรับสมาชิกเข้าบอร์ดชั่วคราว</p>
                 </div>
               ) : room.status === 'full' ? (
                 <div className="p-4 bg-rose-50/80 backdrop-blur-xs rounded-2xl border border-rose-200 text-center">
@@ -390,29 +433,15 @@ export const RoomDetailView: React.FC = () => {
             </div>
           </div>
 
-          {/* Members List Card - Frosted with Live Realtime Updates */}
+          {/* Members List Card */}
           <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-6 border border-white/80 shadow-lg space-y-4">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-[#8B1D1D]/10 text-[#8B1D1D] flex items-center justify-center border border-[#8B1D1D]/20 shadow-2xs">
-                  <Users className="w-4.5 h-4.5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-[#2D2D2D] font-kanit flex items-center gap-2">
-                    <span>สมาชิกในบอร์ด ({room.participants.length}/{room.maxParticipants} คน)</span>
-                  </h3>
-                  <p className="text-[11px] text-[#666]">
-                    {room.participants.length >= room.maxParticipants
-                      ? '🔴 สมาชิกครบตามจำนวนแล้ว'
-                      : `🟢 ว่างอีก ${room.maxParticipants - room.participants.length} ที่นั่ง`}
-                  </p>
-                </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-[#8B1D1D]/10 text-[#8B1D1D] flex items-center justify-center border border-[#8B1D1D]/20 shadow-2xs">
+                <Users className="w-4.5 h-4.5" />
               </div>
-
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 text-[11px] font-semibold shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>อัปเดตสดแบบ Realtime</span>
-              </div>
+              <h3 className="text-base font-bold text-[#2D2D2D] font-kanit">
+                สมาชิกในบอร์ด ({room.participants.length}/{room.maxParticipants} คน)
+              </h3>
             </div>
 
             {/* Capacity Progress Bar */}
@@ -479,13 +508,6 @@ export const RoomDetailView: React.FC = () => {
                   </div>
                 );
               })}
-
-              {/* Slot remaining teaser */}
-              {room.participants.length < room.maxParticipants && (
-                <div className="flex items-center justify-center p-3 rounded-2xl border-2 border-dashed border-stone-300/80 bg-white/20 text-stone-500 text-xs font-medium">
-                  <span>+ ว่างอีก {room.maxParticipants - room.participants.length} ที่สำหรับเพื่อนใหม่</span>
-                </div>
-              )}
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { UniversityActivity } from '../../types';
 import { useApp } from '../../context/AppContext';
-import { Calendar, Clock, MapPin, Building, Users, Plus, Eye, Star } from 'lucide-react';
+import { Calendar, Clock, MapPin, Building, Users, Plus, Eye, Heart } from 'lucide-react';
 
 interface ActivityCardProps {
   activity: UniversityActivity;
@@ -69,12 +69,12 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
             }}
             className={`p-2 rounded-full backdrop-blur-md transition-colors cursor-pointer border border-white/40 ${
               isFavorited
-                ? 'bg-amber-400 text-stone-900 shadow-md'
+                ? 'bg-rose-500 text-white shadow-md'
                 : 'bg-black/30 hover:bg-black/50 text-white'
             }`}
-            title="บันทึกกิจกรรมนี้"
+            title={isFavorited ? 'นำออกจากรายการโปรด' : 'กดใจบันทึกกิจกรรมนี้'}
           >
-            <Star className={`w-4 h-4 ${isFavorited ? 'fill-stone-900' : ''}`} />
+            <Heart className={`w-4 h-4 ${isFavorited ? 'fill-white text-white' : ''}`} />
           </button>
         </div>
 

@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { RoomCard } from '../cards/RoomCard';
 import { ActivityCard } from '../cards/ActivityCard';
 import { maskStudentId } from '../../utils/helpers';
+import { isRoomMatch } from '../../services';
+import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 import {
   Edit3,
   Calendar,
@@ -26,6 +28,8 @@ import {
   Link as LinkIcon,
   X,
   Check,
+  Tag,
+  Loader2,
 } from 'lucide-react';
 
 const PRESET_AVATARS = [
@@ -91,6 +95,68 @@ const PRESET_AVATARS = [
   },
 ];
 
+interface CategoryItemRow {
+  id: number | string;
+  category_id?: number;
+  item_name?: string;
+  tag?: string;
+  name?: string;
+  title?: string;
+}
+
+interface TagCategoryOption {
+  id: number;
+  nameTh: string;
+  icon: string;
+}
+
+const TAG_CATEGORY_OPTIONS: TagCategoryOption[] = [
+  { id: 0, nameTh: 'ทั้งหมด', icon: '✨' },
+  { id: 2, nameTh: 'กิจกรรมมหาลัย', icon: '🏛️' },
+  { id: 4, nameTh: 'กินข้าว', icon: '🍜' },
+  { id: 3, nameTh: 'กีฬา', icon: '⚽' },
+  { id: 5, nameTh: 'อ่านหนังสือ', icon: '📚' },
+  { id: 1, nameTh: 'บันเทิง', icon: '🎮' },
+];
+
+const FALLBACK_CATEGORY_ITEMS: CategoryItemRow[] = [
+  // กิจกรรมมหาลัย (2)
+  { id: 'fb-2-1', category_id: 2, item_name: 'เปิดโลกกิจกรรม' },
+  { id: 'fb-2-2', category_id: 2, item_name: 'รับน้องTU' },
+  { id: 'fb-2-3', category_id: 2, item_name: 'FreshyNight' },
+  { id: 'fb-2-4', category_id: 2, item_name: 'ThammasatConcert' },
+  { id: 'fb-2-5', category_id: 2, item_name: 'วันป๋วย' },
+  { id: 'fb-2-6', category_id: 2, item_name: 'งานบอลประเพณี' },
+  // กินข้าว (4)
+  { id: 'fb-4-1', category_id: 4, item_name: 'สุกี้ตี๋น้อย' },
+  { id: 'fb-4-2', category_id: 4, item_name: 'โรงอาหารทิวสน' },
+  { id: 'fb-4-3', category_id: 4, item_name: 'ชาบูหมูกระทะ' },
+  { id: 'fb-4-4', category_id: 4, item_name: 'ยูสแควร์' },
+  { id: 'fb-4-5', category_id: 4, item_name: 'คาเฟ่' },
+  { id: 'fb-4-6', category_id: 4, item_name: 'ของกินท่าพระจันทร์' },
+  // กีฬา (3)
+  { id: 'fb-3-1', category_id: 3, item_name: 'แบดมินตัน' },
+  { id: 'fb-3-2', category_id: 3, item_name: 'วิ่งGym4' },
+  { id: 'fb-3-3', category_id: 3, item_name: 'ฟุตบอล' },
+  { id: 'fb-3-4', category_id: 3, item_name: 'ฟิตเนสTU' },
+  { id: 'fb-3-5', category_id: 3, item_name: 'บาสเกตบอล' },
+  { id: 'fb-3-6', category_id: 3, item_name: 'ว่ายน้ำTU' },
+  // อ่านหนังสือ (5)
+  { id: 'fb-5-1', category_id: 5, item_name: 'อ่านหนังสือหอสมุด' },
+  { id: 'fb-5-2', category_id: 5, item_name: 'ติวแคลคูลัส' },
+  { id: 'fb-5-3', category_id: 5, item_name: 'อ่านหนังสือSC' },
+  { id: 'fb-5-4', category_id: 5, item_name: 'อ่านสอบกลางภาค' },
+  { id: 'fb-5-5', category_id: 5, item_name: 'ทำโปรเจกต์' },
+  { id: 'fb-5-6', category_id: 5, item_name: 'ติวสอบ' },
+  // บันเทิง (1)
+  { id: 'fb-1-1', category_id: 1, item_name: 'บอร์ดเกม' },
+  { id: 'fb-1-2', category_id: 1, item_name: 'ดูหนังฟิวเจอร์' },
+  { id: 'fb-1-3', category_id: 1, item_name: 'คาราโอเกะ' },
+  { id: 'fb-1-4', category_id: 1, item_name: 'ตีป้อมRoV' },
+  { id: 'fb-1-5', category_id: 1, item_name: 'คอนเสิร์ต' },
+  { id: 'fb-1-6', category_id: 1, item_name: 'ฟังเพลง' },
+];
+
 export const ProfileView: React.FC = () => {
   const {
     currentUser,
@@ -119,7 +185,57 @@ export const ProfileView: React.FC = () => {
   const [faculty, setFaculty] = useState(currentUser.faculty);
   const [campus, setCampus] = useState(currentUser.campus);
   const [avatar, setAvatar] = useState(currentUser.avatar);
-  const [interestsInput, setInterestsInput] = useState(currentUser.interests.join(' '));
+  const [selectedInterests, setSelectedInterests] = useState<string[]>(currentUser.interests || []);
+
+  // Category items from Supabase & tag filtering
+  const [supabaseCategoryItems, setSupabaseCategoryItems] = useState<CategoryItemRow[]>([]);
+  const [isLoadingCategoryItems, setIsLoadingCategoryItems] = useState(false);
+  const [selectedTagCategory, setSelectedTagCategory] = useState<number>(0); // 0 = All
+
+  // Fetch category_items from Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCategoryItems = async () => {
+      if (!isSupabaseConfigured) return;
+      setIsLoadingCategoryItems(true);
+      try {
+        const { data, error } = await supabase
+          .from('category_items')
+          .select('*')
+          .order('id');
+        if (!error && data && data.length > 0 && isMounted) {
+          setSupabaseCategoryItems(data);
+        }
+      } catch (err) {
+        console.warn('[ProfileView] Error fetching category_items:', err);
+      } finally {
+        if (isMounted) setIsLoadingCategoryItems(false);
+      }
+    };
+    fetchCategoryItems();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const categoryItemsToUse = supabaseCategoryItems.length > 0 ? supabaseCategoryItems : FALLBACK_CATEGORY_ITEMS;
+
+  // Available tags computed from category_items
+  const availableTags = useMemo(() => {
+    const filtered = selectedTagCategory === 0
+      ? categoryItemsToUse
+      : categoryItemsToUse.filter((item) => Number(item.category_id) === selectedTagCategory);
+
+    const mapped = filtered
+      .map((item) => {
+        const raw = (item.item_name || item.tag || item.name || item.title || '').trim();
+        if (!raw) return '';
+        return raw.startsWith('#') ? raw : `#${raw}`;
+      })
+      .filter((t) => t.length > 1);
+
+    return Array.from(new Set(mapped));
+  }, [categoryItemsToUse, selectedTagCategory]);
 
   // Avatar customization modal state
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
@@ -128,7 +244,7 @@ export const ProfileView: React.FC = () => {
   const [customUrlInput, setCustomUrlInput] = useState('');
 
   // Sync edit form with currentUser updates
-  React.useEffect(() => {
+  useEffect(() => {
     setName(currentUser.name);
     setFullName(currentUser.fullName || '');
     setBio(currentUser.bio || '');
@@ -136,7 +252,7 @@ export const ProfileView: React.FC = () => {
     setCampus(currentUser.campus);
     setAvatar(currentUser.avatar);
     setTempAvatar(currentUser.avatar);
-    setInterestsInput(currentUser.interests.join(' '));
+    setSelectedInterests(currentUser.interests || []);
   }, [currentUser]);
 
   // Handle escape key for Avatar modal
@@ -201,20 +317,34 @@ export const ProfileView: React.FC = () => {
     setFaculty(currentUser.faculty);
     setCampus(currentUser.campus);
     setAvatar(currentUser.avatar);
-    setInterestsInput(currentUser.interests.join(' '));
+    setSelectedInterests(currentUser.interests || []);
     setIsEditing(false);
+  };
+
+  const handleToggleInterest = (tag: string) => {
+    setSelectedInterests((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleRemoveInterest = (tag: string) => {
+    setSelectedInterests((prev) => prev.filter((t) => t !== tag));
   };
 
   // 1. My Board: Rooms created by current user
   const myBoardRooms = rooms.filter((r) => r.creator.id === currentUser.id);
 
-  // 2. Upcoming Activities: Rooms where current user is a participant
-  const upcomingRooms = rooms.filter((r) =>
-    r.participants.some((p) => p.id === currentUser.id && !p.isHost)
+  // 2. Upcoming Activities: Rooms where current user is a participant OR creator (including boards created by current user)
+  const upcomingRooms = rooms.filter(
+    (r) =>
+      r.creator.id === currentUser.id ||
+      r.participants.some((p) => p.id === currentUser.id)
   );
 
   // 3. Favorites: Rooms & Activities bookmarked
-  const favoriteRoomsList = rooms.filter((r) => currentUser.favoriteRooms.includes(r.id));
+  const favoriteRoomsList = rooms.filter((r) =>
+    currentUser.favoriteRooms.some((favId) => isRoomMatch(r.id, favId))
+  );
   const favoriteActivitiesList = universityActivities.filter((a) =>
     currentUser.favoriteActivities.includes(a.id)
   );
@@ -227,10 +357,6 @@ export const ProfileView: React.FC = () => {
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedInterests = interestsInput
-      .split(/[\s,]+/)
-      .map((t) => (t.startsWith('#') ? t : `#${t}`))
-      .filter((t) => t.length > 1);
 
     updateUserProfile({
       name: name.trim() || currentUser.name,
@@ -239,7 +365,7 @@ export const ProfileView: React.FC = () => {
       faculty,
       campus,
       avatar,
-      interests: parsedInterests.length > 0 ? parsedInterests : currentUser.interests,
+      interests: selectedInterests,
     });
     setIsEditing(false);
   };
@@ -513,15 +639,94 @@ export const ProfileView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-[#555] mb-1">สิ่งที่สนใจ (คั่นด้วยวรรค หรือ #)</label>
-                <input
-                  type="text"
-                  value={interestsInput}
-                  onChange={(e) => setInterestsInput(e.target.value)}
-                  placeholder="#บอร์ดเกม #วิ่งGym4 #ตี๋น้อย"
-                  className="w-full bg-white/70 border border-white/80 rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D]"
-                />
+              <div className="sm:col-span-2 space-y-2 bg-white/40 backdrop-blur-xs p-3.5 rounded-2xl border border-white/70 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#8B1D1D] font-kanit flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>สิ่งที่สนใจ</span>
+                  </label>
+                  <span className="text-[10px] text-[#777]">
+                    เลือกแท็กจากรายการด้านล่าง (เลือกได้ไม่จำกัด)
+                  </span>
+                </div>
+
+                {/* Currently selected interests */}
+                <div className="flex items-center gap-1.5 flex-wrap min-h-[32px]">
+                  {selectedInterests.map((tag, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-[#8B1D1D]/10 text-[#8B1D1D] border border-[#8B1D1D]/20 shadow-2xs"
+                    >
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveInterest(tag)}
+                        className="hover:text-rose-700 cursor-pointer p-0.5"
+                        title="ลบแท็กนี้"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {selectedInterests.length === 0 && (
+                    <span className="text-xs text-[#888] italic">ยังไม่ได้เลือกสิ่งที่สนใจ (กดเลือกแท็กด้านล่างได้เลย)</span>
+                  )}
+                </div>
+
+                {/* Category Filter for tags */}
+                <div className="pt-2 border-t border-white/60">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {TAG_CATEGORY_OPTIONS.map((cat) => {
+                      const isActive = selectedTagCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setSelectedTagCategory(cat.id)}
+                          className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border ${
+                            isActive
+                              ? 'bg-[#8B1D1D] text-white border-[#8B1D1D] shadow-xs'
+                              : 'bg-white/60 hover:bg-white text-[#555] border-white/80'
+                          }`}
+                        >
+                          <span className="mr-1">{cat.icon}</span>
+                          <span>{cat.nameTh}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Available Tags list from category_items */}
+                <div className="pt-1">
+                  {isLoadingCategoryItems ? (
+                    <div className="flex items-center gap-2 py-2 text-xs text-[#888]">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8B1D1D]" />
+                      <span>กำลังโหลดแท็กจาก category_items...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 flex-wrap max-h-44 overflow-y-auto pr-1">
+                      {availableTags.map((tag, idx) => {
+                        const isSelected = selectedInterests.includes(tag);
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleToggleInterest(tag)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
+                              isSelected
+                                ? 'bg-[#8B1D1D] text-white border-[#8B1D1D] shadow-2xs font-bold scale-[1.02]'
+                                : 'bg-white/80 hover:bg-white text-[#555] border-white/90 hover:border-[#8B1D1D]/30'
+                            }`}
+                          >
+                            {isSelected && <Check className="w-3 h-3 inline mr-1" />}
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -663,7 +868,7 @@ export const ProfileView: React.FC = () => {
         {/* Tab 2: Upcoming Activities */}
         {activeTab === 'upcoming' && (
           <div className="space-y-4">
-            <p className="text-xs text-[#666]">ห้องและกิจกรรมที่คุณได้กดเข้าร่วม (Join) ไว้แล้ว</p>
+            <p className="text-xs text-[#666]">กิจกรรมที่คุณเข้าร่วมหรือเป็นผู้สร้าง</p>
             {upcomingRooms.length === 0 ? (
               <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-10 text-center border border-white/70 shadow-md space-y-2">
                 <div className="text-4xl">🏃</div>
@@ -683,33 +888,43 @@ export const ProfileView: React.FC = () => {
         {/* Tab 3: Favorites */}
         {activeTab === 'favorites' && (
           <div className="space-y-6">
-            {/* Favorite Activities */}
-            {favoriteActivitiesList.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-bold text-[#8B1D1D]">⭐ กิจกรรม มธ. ที่บันทึกไว้</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {favoriteActivitiesList.map((act) => (
-                    <ActivityCard key={act.id} activity={act} />
-                  ))}
-                </div>
+            {favoriteActivitiesList.length === 0 && favoriteRoomsList.length === 0 ? (
+              <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-10 text-center border border-white/70 shadow-md space-y-2">
+                <div className="text-4xl">💗</div>
+                <h3 className="text-sm font-bold text-[#2D2D2D]">ยังไม่มีรายการโปรดที่บันทึกไว้</h3>
+                <p className="text-xs text-[#666]">คุณสามารถกดใจ (💗) ที่ห้องหาเพื่อนหรือกิจกรรม เพื่อบันทึกไว้ดูที่นี่ได้ตลอดเวลา</p>
               </div>
-            )}
+            ) : (
+              <>
+                {/* Favorite Activities */}
+                {favoriteActivitiesList.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-[#8B1D1D] flex items-center gap-1.5">
+                      <span>💗 กิจกรรม มธ. ที่บันทึกไว้ ({favoriteActivitiesList.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {favoriteActivitiesList.map((act) => (
+                        <ActivityCard key={act.id} activity={act} />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-            {/* Favorite Rooms */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-bold text-[#8B1D1D]">💗 ห้องหาเพื่อนที่บันทึกไว้</h3>
-              {favoriteRoomsList.length === 0 ? (
-                <div className="bg-white/50 backdrop-blur-lg rounded-3xl p-8 text-center border border-white/70 shadow-md">
-                  <p className="text-xs text-[#666]">ยังไม่ได้บันทึกห้องใดไว้</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {favoriteRoomsList.map((room) => (
-                    <RoomCard key={room.id} room={room} />
-                  ))}
-                </div>
-              )}
-            </div>
+                {/* Favorite Rooms */}
+                {favoriteRoomsList.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-[#8B1D1D] flex items-center gap-1.5">
+                      <span>💗 ห้องหาเพื่อนที่บันทึกไว้ ({favoriteRoomsList.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {favoriteRoomsList.map((room) => (
+                        <RoomCard key={room.id} room={room} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

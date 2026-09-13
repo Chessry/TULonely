@@ -20,6 +20,8 @@ interface FormErrors {
   location?: string;
   activityDate?: string;
   activityTime?: string;
+  recruitmentDeadlineDate?: string;
+  recruitmentDeadlineTime?: string;
   maxParticipants?: string;
 }
 
@@ -69,6 +71,8 @@ export const CreateRoomModal: React.FC = () => {
   const [description, setDescription] = useState('');
   const [activityDate, setActivityDate] = useState('');
   const [activityTime, setActivityTime] = useState('17:00');
+  const [recruitmentDeadlineDate, setRecruitmentDeadlineDate] = useState('');
+  const [recruitmentDeadlineTime, setRecruitmentDeadlineTime] = useState('17:00');
   const [location, setLocation] = useState('');
   const [campus, setCampus] = useState<string>('ศูนย์รังสิต');
   const [maxParticipants, setMaxParticipants] = useState<number>(4);
@@ -263,12 +267,17 @@ export const CreateRoomModal: React.FC = () => {
       setCampus(preselectedActivityForRoom.campus);
       setActivityDate(todayIso);
       setActivityTime('17:00');
+      setRecruitmentDeadlineDate(todayIso);
+      setRecruitmentDeadlineTime('17:00');
     } else {
       // Default to tomorrow
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const isoTomorrow = tomorrow.toISOString().split('T')[0];
       setActivityDate(isoTomorrow);
+      setActivityTime('17:00');
+      setRecruitmentDeadlineDate(isoTomorrow);
+      setRecruitmentDeadlineTime('17:00');
     }
   }, [
     preselectedCategoryForRoom,
@@ -341,6 +350,35 @@ export const CreateRoomModal: React.FC = () => {
       }
     }
 
+    // 5. Recruitment Deadline Date & Time
+    if (!recruitmentDeadlineDate) {
+      newErrors.recruitmentDeadlineDate = 'กรุณาระบุวันที่ปิดรับสมัคร';
+    }
+    if (!recruitmentDeadlineTime) {
+      newErrors.recruitmentDeadlineTime = 'กรุณาระบุเวลาปิดรับสมัคร';
+    }
+
+    if (recruitmentDeadlineDate && recruitmentDeadlineTime) {
+      const deadlineTimeStr = recruitmentDeadlineTime.trim() || '12:00';
+      const [dYear, dMonth, dDay] = recruitmentDeadlineDate.split('-').map(Number);
+      const [dHours, dMinutes] = deadlineTimeStr.split(':').map(Number);
+      let deadlineDateTime: Date | null = null;
+      if (dYear && dMonth && dDay) {
+        deadlineDateTime = new Date(dYear, dMonth - 1, dDay, dHours || 0, dMinutes || 0);
+      } else {
+        const parsed = new Date(`${recruitmentDeadlineDate}T${deadlineTimeStr}:00`);
+        if (!isNaN(parsed.getTime())) deadlineDateTime = parsed;
+      }
+
+      if (deadlineDateTime) {
+        if (deadlineDateTime.getTime() < Date.now() - 5 * 60 * 1000) {
+          newErrors.recruitmentDeadlineDate = 'เวลาปิดบอร์ดต้องไม่เป็นเวลาในอดีต';
+        } else if (actDateTime && deadlineDateTime.getTime() > actDateTime.getTime()) {
+          newErrors.recruitmentDeadlineDate = 'เวลาปิดบอร์ดต้องไม่เกินเวลา ณ กิจกรรมเริ่ม';
+        }
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -355,8 +393,15 @@ export const CreateRoomModal: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // Fixed 12-hour recruitment deadline from the creation time
-      const calculatedDeadlineIso = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      // User-defined recruitment deadline (must not exceed activity start time)
+      const dTimeStr = recruitmentDeadlineTime.trim() || '17:00';
+      const [dYear, dMonth, dDay] = recruitmentDeadlineDate.split('-').map(Number);
+      const [dHours, dMinutes] = dTimeStr.split(':').map(Number);
+      let deadlineObj = new Date(dYear, dMonth - 1, dDay, dHours || 0, dMinutes || 0);
+      if (isNaN(deadlineObj.getTime())) {
+        deadlineObj = new Date(`${recruitmentDeadlineDate}T${dTimeStr}:00`);
+      }
+      const calculatedDeadlineIso = deadlineObj.toISOString();
 
       // Combined date and time for Supabase field 'event_date_time'
       const eventDateTime = `${activityDate}T${activityTime}:00`;
@@ -660,6 +705,72 @@ export const CreateRoomModal: React.FC = () => {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* วันและเวลาปิดรับสมัคร (ปิดบอร์ด) - กำหนดเองได้แต่ห้ามเกินเวลากิจกรรมเริ่ม */}
+          <div className="p-3.5 bg-amber-50/60 backdrop-blur-xs rounded-2xl border border-amber-200/80 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <label className="text-xs font-bold text-[#8B1D1D] flex items-center gap-1.5 font-kanit">
+                <Clock className="w-3.5 h-3.5 text-[#8B1D1D]" />
+                <span>วันและเวลาปิดรับสมัคร (ปิดบอร์ด) <span className="text-rose-500">*</span></span>
+              </label>
+              <span className="text-[10px] text-amber-900/80 font-medium">⚠️ ห้ามเกินเวลา ณ กิจกรรมเริ่ม</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-[#555] mb-1">
+                  วันที่ปิดรับสมัคร
+                </label>
+                <input
+                  type="date"
+                  min={todayIso}
+                  max={activityDate || undefined}
+                  value={recruitmentDeadlineDate}
+                  disabled={isSubmitting}
+                  onChange={(e) => {
+                    setRecruitmentDeadlineDate(e.target.value);
+                    if (errors.recruitmentDeadlineDate) {
+                      setErrors((prev) => ({ ...prev, recruitmentDeadlineDate: undefined }));
+                    }
+                  }}
+                  className={`w-full bg-white/80 border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 transition-colors ${
+                    errors.recruitmentDeadlineDate
+                      ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
+                      : 'border-white/90 focus:ring-[#8B1D1D]'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-[#555] mb-1">
+                  เวลาปิดรับสมัคร
+                </label>
+                <input
+                  type="time"
+                  value={recruitmentDeadlineTime}
+                  disabled={isSubmitting}
+                  onChange={(e) => {
+                    setRecruitmentDeadlineTime(e.target.value);
+                    if (errors.recruitmentDeadlineTime) {
+                      setErrors((prev) => ({ ...prev, recruitmentDeadlineTime: undefined }));
+                    }
+                  }}
+                  className={`w-full bg-white/80 border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 transition-colors ${
+                    errors.recruitmentDeadlineTime
+                      ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
+                      : 'border-white/90 focus:ring-[#8B1D1D]'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {(errors.recruitmentDeadlineDate || errors.recruitmentDeadlineTime) && (
+              <p className="text-[11px] text-rose-500 flex items-center gap-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{errors.recruitmentDeadlineDate || errors.recruitmentDeadlineTime}</span>
+              </p>
+            )}
           </div>
 
           {/* Location ("สถานที่นัดพบ (มธ. ศูนย์รังสิต)" connects to location) */}

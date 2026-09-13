@@ -7,7 +7,7 @@ export type CategoryType =
   | 'activity'
   | 'restaurants';
 
-export type RoomStatus = 'open' | 'almost_full' | 'full' | 'expired';
+export type RoomStatus = 'open' | 'almost_full' | 'full' | 'expired' | 'closed';
 
 export interface Participant {
   id: string;
@@ -86,6 +86,8 @@ export interface Room {
   recruitmentOption: 'datetime' | 'hours';
   recruitmentHours?: number;
   status: RoomStatus;
+  isPaused?: boolean;
+  isClosed?: boolean;
   createdAt: string;
   chatMessages: ChatMessage[];
   viewsCount?: number;

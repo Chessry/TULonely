@@ -594,12 +594,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setRooms((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
 
-      // Update user's favorite or created rooms list
-      setCurrentUser((prev) => ({
-        ...prev,
-        favoriteRooms: [...prev.favoriteRooms, created.id],
-      }));
-
       showToast('สร้างห้องสำเร็จและบันทึกข้อมูลเข้าสู่ Supabase เรียบร้อยแล้ว! 🎉');
       return created.id;
     } catch (err) {
@@ -668,8 +662,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
 
       await roomService.updateRoom(roomId, updates);
-      showToast('แก้ไขข้อมูลบอร์ดเรียบร้อยแล้ว ✨');
-      closeEditRoomModal();
+      if (isEditModalOpen) {
+        showToast('แก้ไขข้อมูลบอร์ดเรียบร้อยแล้ว ✨');
+        closeEditRoomModal();
+      }
       return true;
     } catch (err) {
       console.error('[AppContext] updateRoom error:', err);
@@ -720,6 +716,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentStatus = calculateRoomStatus(room);
     if (currentStatus === 'expired') {
       showToast('ขออภัย ห้องนี้หมดเวลารับสมาชิกแล้ว');
+      return false;
+    }
+
+    if (room.isPaused || room.isClosed || currentStatus === 'closed') {
+      showToast('ขออภัย ผู้สร้างพักรับสมาชิกเข้าบอร์ดชั่วคราว');
       return false;
     }
 
@@ -1002,11 +1003,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleFavoriteRoom = (roomId: string) => {
     setCurrentUser((prev) => {
-      const exists = prev.favoriteRooms.includes(roomId);
+      const exists = prev.favoriteRooms.some((id) => isRoomMatch(id, roomId));
       const updated = exists
-        ? prev.favoriteRooms.filter((id) => id !== roomId)
+        ? prev.favoriteRooms.filter((id) => !isRoomMatch(id, roomId))
         : [...prev.favoriteRooms, roomId];
-      showToast(exists ? 'นำออกจากรายการบันทึกแล้ว' : 'บันทึกห้องนี้ไว้แล้ว 💗');
+      showToast(exists ? 'นำออกจากรายการโปรดแล้ว' : 'บันทึกห้องนี้ไว้ในรายการโปรดแล้ว 💗');
+
+      if (isSupabaseConfigured) {
+        supabase.auth
+          .updateUser({
+            data: { favoriteRooms: updated },
+          })
+          .catch((err) => console.warn('[AppContext] Supabase favoriteRooms sync error:', err));
+      }
+
       return { ...prev, favoriteRooms: updated };
     });
 
@@ -1021,7 +1031,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = exists
         ? prev.favoriteActivities.filter((id) => id !== actId)
         : [...prev.favoriteActivities, actId];
-      showToast(exists ? 'นำกิจกรรมออกจากรายการบันทึก' : 'บันทึกกิจกรรมนี้ไว้แล้ว ⭐');
+      showToast(exists ? 'นำกิจกรรมออกจากรายการโปรดแล้ว' : 'บันทึกกิจกรรมนี้ไว้ในรายการโปรดแล้ว 💗');
+
+      if (isSupabaseConfigured) {
+        supabase.auth
+          .updateUser({
+            data: { favoriteActivities: updated },
+          })
+          .catch((err) => console.warn('[AppContext] Supabase favoriteActivities sync error:', err));
+      }
+
       return { ...prev, favoriteActivities: updated };
     });
 

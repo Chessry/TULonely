@@ -123,8 +123,12 @@ const buildProfileFromSupabaseUser = (sbUser: { id: string; email?: string; user
     bio: (meta.bio as string) ?? null,
     avatar: (meta.avatar as string) || (meta.avatar_url as string) || local.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     interests: Array.isArray(meta.interests) ? (meta.interests as string[]) : local.interests || [],
-    favoriteRooms: Array.isArray(meta.favoriteRooms) ? (meta.favoriteRooms as string[]) : local.favoriteRooms || [],
-    favoriteActivities: Array.isArray(meta.favoriteActivities) ? (meta.favoriteActivities as string[]) : local.favoriteActivities || [],
+    favoriteRooms: Array.isArray(meta.favoriteRooms) && meta.favoriteRooms.length > 0
+      ? (meta.favoriteRooms as string[])
+      : local.favoriteRooms || [],
+    favoriteActivities: Array.isArray(meta.favoriteActivities) && meta.favoriteActivities.length > 0
+      ? (meta.favoriteActivities as string[])
+      : local.favoriteActivities || [],
   };
 };
 

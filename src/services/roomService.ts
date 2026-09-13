@@ -923,15 +923,6 @@ export const roomService = {
     const updatedRooms = [newRoom, ...rooms];
     saveLocalRooms(updatedRooms);
 
-    // Add to creator's favorite rooms
-    const user = getLocalUser();
-    if (!user.favoriteRooms.includes(newId)) {
-      saveLocalUser({
-        ...user,
-        favoriteRooms: [...user.favoriteRooms, newId],
-      });
-    }
-
     // Broadcast online to all accounts
     realtimeService.broadcastRoomCreated(newRoom);
 
@@ -1090,6 +1081,10 @@ export const roomService = {
     const currentStatus = calculateRoomStatus(room);
     if (currentStatus === 'expired') {
       return { room, success: false, message: 'ขออภัย ห้องนี้หมดเวลารับสมาชิกแล้ว' };
+    }
+
+    if (room.isPaused || room.isClosed || currentStatus === 'closed') {
+      return { room, success: false, message: 'ขออภัย ผู้สร้างพักรับสมาชิกเข้าบอร์ดชั่วคราว' };
     }
 
     const newParticipant: Participant = {

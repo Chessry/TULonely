@@ -8,13 +8,11 @@ import {
   Clock,
   MapPin,
   Users,
-  Building,
   AlertCircle,
   Loader2,
   Tag,
   Edit3,
   Check,
-  Plus,
 } from 'lucide-react';
 
 interface FormErrors {
@@ -22,6 +20,8 @@ interface FormErrors {
   location?: string;
   activityDate?: string;
   activityTime?: string;
+  recruitmentDeadlineDate?: string;
+  recruitmentDeadlineTime?: string;
   maxParticipants?: string;
 }
 
@@ -53,6 +53,38 @@ const DEFAULT_CATEGORY_OPTIONS: CategoryOption[] = [
 
 const CAMPUS_OPTIONS = ['ศูนย์รังสิต', 'ท่าพระจันทร์', 'ศูนย์ลำปาง', 'ศูนย์พัทยา'];
 
+const getFallbackTagsForCategory = (catId: number): string[] => {
+  switch (catId) {
+    case 4: // food / restaurants
+      return ['#สุกี้ตี๋น้อย', '#โรงอาหารทิวสน', '#ชาบูหมูกระทะ', '#ยูสแควร์', '#คาเฟ่'];
+    case 3: // sports
+      return ['#แบดมินตัน', '#วิ่งGym4', '#ฟุตบอล', '#ฟิตเนสTU', '#บาสเกตบอล'];
+    case 5: // study
+      return ['#อ่านหนังสือหอสมุด', '#ติวแคลคูลัส', '#อ่านหนังสือSC', '#อ่านสอบกลางภาค', '#ทำโปรเจกต์'];
+    case 1: // entertainment
+      return ['#บอร์ดเกม', '#ดูหนังฟิวเจอร์', '#คาราโอเกะ', '#ตีป้อมRoV', '#คอนเสิร์ต'];
+    case 2: // activity / university
+    default:
+      return ['#เปิดโลกกิจกรรม', '#รับน้องTU', '#FreshyNight', '#ThammasatConcert', '#วันป๋วย'];
+  }
+};
+
+const getTagsForCategory = (catId: number, items: CategoryItemRow[]): string[] => {
+  const matching = items
+    .filter((item) => Number(item.category_id) === catId)
+    .map((item) => {
+      const raw = (item.item_name || item.tag || item.name || item.title || '').trim();
+      if (!raw) return '';
+      return raw.startsWith('#') ? raw : `#${raw}`;
+    })
+    .filter((t) => t.length > 1);
+
+  const unique = Array.from(new Set(matching));
+  if (unique.length > 0) return unique;
+
+  return getFallbackTagsForCategory(catId);
+};
+
 export const EditRoomModal: React.FC = () => {
   const {
     isEditModalOpen,
@@ -72,13 +104,14 @@ export const EditRoomModal: React.FC = () => {
   const [description, setDescription] = useState('');
   const [activityDate, setActivityDate] = useState('');
   const [activityTime, setActivityTime] = useState('17:00');
+  const [recruitmentDeadlineDate, setRecruitmentDeadlineDate] = useState('');
+  const [recruitmentDeadlineTime, setRecruitmentDeadlineTime] = useState('17:00');
   const [location, setLocation] = useState('');
   const [campus, setCampus] = useState<string>('ศูนย์รังสิต');
   const [maxParticipants, setMaxParticipants] = useState<number>(4);
 
   // Tags state
   const [tags, setTags] = useState<string[]>([]);
-  const [customTagInput, setCustomTagInput] = useState<string>('');
 
   // Supabase items states
   const [supabaseCategoryItems, setSupabaseCategoryItems] = useState<CategoryItemRow[]>([]);
@@ -183,13 +216,33 @@ export const EditRoomModal: React.FC = () => {
     setDescription(editingRoom.description || '');
     setActivityDate(editingRoom.activityDate || todayIso);
     setActivityTime(editingRoom.activityTime || '17:00');
+
+    if (editingRoom.recruitmentDeadline) {
+      try {
+        const d = new Date(editingRoom.recruitmentDeadline);
+        if (!isNaN(d.getTime())) {
+          setRecruitmentDeadlineDate(d.toISOString().split('T')[0]);
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mm = String(d.getMinutes()).padStart(2, '0');
+          setRecruitmentDeadlineTime(`${hh}:${mm}`);
+        } else {
+          setRecruitmentDeadlineDate(editingRoom.activityDate || todayIso);
+          setRecruitmentDeadlineTime(editingRoom.activityTime || '17:00');
+        }
+      } catch {
+        setRecruitmentDeadlineDate(editingRoom.activityDate || todayIso);
+        setRecruitmentDeadlineTime(editingRoom.activityTime || '17:00');
+      }
+    } else {
+      setRecruitmentDeadlineDate(editingRoom.activityDate || todayIso);
+      setRecruitmentDeadlineTime(editingRoom.activityTime || '17:00');
+    }
     setLocation(editingRoom.location || '');
     setCampus(editingRoom.campus || 'ศูนย์รังสิต');
     setMaxParticipants(editingRoom.maxParticipants || editingRoom.maxParticipant || 4);
-    setTags(editingRoom.tags ? [...editingRoom.tags] : []);
+    setTags(editingRoom.tags && editingRoom.tags.length > 0 ? [editingRoom.tags[0]] : []);
     setSelectedUnivActivityTitle(editingRoom.universityActivityTitle || '');
     setErrors({});
-    setCustomTagInput('');
 
     // Set category & categoryId
     const cat = editingRoom.category;
@@ -228,58 +281,20 @@ export const EditRoomModal: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditModalOpen, isSubmitting, closeEditRoomModal]);
 
-  // Available tag recommendations based on current category
+  // Available tags strictly filtered by selectedCategoryId matching category_items
   const availableTags = useMemo(() => {
-    const fromSupabase = supabaseCategoryItems
-      .filter((item) => Number(item.category_id) === selectedCategoryId)
-      .map((item) => {
-        const raw = item.item_name || item.tag || item.name || '';
-        return raw.startsWith('#') ? raw : `#${raw}`;
-      })
-      .filter((t) => t.length > 1);
+    return getTagsForCategory(selectedCategoryId, supabaseCategoryItems);
+  }, [selectedCategoryId, supabaseCategoryItems]);
 
-    if (fromSupabase.length > 0) return fromSupabase;
-
-    // Fallbacks
-    switch (category) {
-      case 'restaurants':
-      case 'food':
-        return ['#สุกี้ตี๋น้อย', '#โรงอาหารทิวสน', '#ชาบูหมูกระทะ', '#ยูสแควร์', '#คาเฟ่'];
-      case 'sports':
-        return ['#แบดมินตัน', '#วิ่งGym4', '#ฟุตบอล', '#ฟิตเนสTU', '#บาสเกตบอล'];
-      case 'study':
-        return ['#อ่านหนังสือหอสมุด', '#ติวแคลคูลัส', '#อ่านหนังสือSC', '#อ่านสอบกลางภาค', '#ทำโปรเจกต์'];
-      case 'entertainment':
-        return ['#บอร์ดเกม', '#ดูหนังฟิวเจอร์', '#คาราโอเกะ', '#ตีป้อมRoV', '#คอนเสิร์ต'];
-      case 'activity':
-      case 'university':
-      default:
-        return ['#เปิดโลกกิจกรรม', '#รับน้องTU', '#FreshyNight', '#ThammasatConcert', '#วันป๋วย'];
-    }
-  }, [supabaseCategoryItems, selectedCategoryId, category]);
-
-  // Toggle or add a tag
+  // Toggle tag selection (single tag only)
   const handleToggleTag = (tagText: string) => {
     setTags((prev) => {
       if (prev.includes(tagText)) {
-        return prev.filter((t) => t !== tagText);
+        return [];
       } else {
-        return [...prev, tagText];
+        return [tagText];
       }
     });
-  };
-
-  // Add custom tag
-  const handleAddCustomTag = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const clean = customTagInput.trim();
-    if (!clean) return;
-
-    const formatted = clean.startsWith('#') ? clean : `#${clean}`;
-    if (!tags.includes(formatted)) {
-      setTags((prev) => [...prev, formatted]);
-    }
-    setCustomTagInput('');
   };
 
   // Remove tag
@@ -287,10 +302,15 @@ export const EditRoomModal: React.FC = () => {
     setTags((prev) => prev.filter((t) => t !== tagToRemove));
   };
 
-  // Category switch handler
+  // Category switch handler: update category and keep only valid tags (single tag only)
   const handleCategorySelect = (opt: CategoryOption) => {
     setSelectedCategoryId(opt.id);
     setCategory(opt.key);
+    const validTagsForNewCategory = getTagsForCategory(opt.id, supabaseCategoryItems);
+    setTags((prev) => {
+      const remaining = prev.filter((t) => validTagsForNewCategory.includes(t));
+      return remaining.slice(0, 1);
+    });
   };
 
   const currentParticipantsCount = editingRoom?.participants?.length || 1;
@@ -313,8 +333,8 @@ export const EditRoomModal: React.FC = () => {
     // 3. Max Participants
     if (!maxParticipants || isNaN(maxParticipants) || maxParticipants < 2) {
       newErrors.maxParticipants = 'จำนวนเพื่อนต้องอย่างน้อย 2 คน';
-    } else if (maxParticipants > 50) {
-      newErrors.maxParticipants = 'จำนวนเพื่อนต้องไม่เกิน 50 คน';
+    } else if (maxParticipants > 100) {
+      newErrors.maxParticipants = 'จำนวนเพื่อนต้องไม่เกิน 100 คน';
     } else if (maxParticipants < currentParticipantsCount) {
       newErrors.maxParticipants = `มีสมาชิกเข้าร่วมแล้ว ${currentParticipantsCount} คน ไม่สามารถตั้งค่าน้อยกว่า ${currentParticipantsCount} ได้`;
     }
@@ -344,6 +364,31 @@ export const EditRoomModal: React.FC = () => {
       }
     }
 
+    // 5. Recruitment Deadline Date & Time
+    if (!recruitmentDeadlineDate) {
+      newErrors.recruitmentDeadlineDate = 'กรุณาระบุวันที่ปิดรับสมัคร';
+    }
+    if (!recruitmentDeadlineTime) {
+      newErrors.recruitmentDeadlineTime = 'กรุณาระบุเวลาปิดรับสมัคร';
+    }
+
+    if (recruitmentDeadlineDate && recruitmentDeadlineTime) {
+      const deadlineTimeStr = recruitmentDeadlineTime.trim() || '12:00';
+      const [dYear, dMonth, dDay] = recruitmentDeadlineDate.split('-').map(Number);
+      const [dHours, dMinutes] = deadlineTimeStr.split(':').map(Number);
+      let deadlineDateTime: Date | null = null;
+      if (dYear && dMonth && dDay) {
+        deadlineDateTime = new Date(dYear, dMonth - 1, dDay, dHours || 0, dMinutes || 0);
+      } else {
+        const parsed = new Date(`${recruitmentDeadlineDate}T${deadlineTimeStr}:00`);
+        if (!isNaN(parsed.getTime())) deadlineDateTime = parsed;
+      }
+
+      if (deadlineDateTime && actDateTime && deadlineDateTime.getTime() > actDateTime.getTime()) {
+        newErrors.recruitmentDeadlineDate = 'เวลาปิดบอร์ดต้องไม่เกินเวลา ณ กิจกรรมเริ่ม';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -362,6 +407,19 @@ export const EditRoomModal: React.FC = () => {
 
     try {
       const eventDateTime = `${activityDate}T${activityTime}:00`;
+
+      // User-defined recruitment deadline
+      let calculatedDeadlineIso: string | undefined = undefined;
+      if (recruitmentDeadlineDate && recruitmentDeadlineTime) {
+        const dTimeStr = recruitmentDeadlineTime.trim() || '17:00';
+        const [dYear, dMonth, dDay] = recruitmentDeadlineDate.split('-').map(Number);
+        const [dHours, dMinutes] = dTimeStr.split(':').map(Number);
+        let deadlineObj = new Date(dYear, dMonth - 1, dDay, dHours || 0, dMinutes || 0);
+        if (isNaN(deadlineObj.getTime())) {
+          deadlineObj = new Date(`${recruitmentDeadlineDate}T${dTimeStr}:00`);
+        }
+        calculatedDeadlineIso = deadlineObj.toISOString();
+      }
 
       // Calculate categoryItemId
       let categoryItemId: number | undefined = editingRoom.categoryItemId;
@@ -398,6 +456,7 @@ export const EditRoomModal: React.FC = () => {
         activityDate,
         activityTime,
         eventDateTime,
+        recruitmentDeadline: calculatedDeadlineIso,
         location: location.trim(),
         campus,
         tags: finalTags,
@@ -432,7 +491,6 @@ export const EditRoomModal: React.FC = () => {
             </div>
             <div>
               <h2 className="font-bold text-base sm:text-lg font-kanit">แก้ไขข้อมูลบอร์ด</h2>
-              <p className="text-[11px] text-white/80">ปรับปรุงรายละเอียดกิจกรรม เวลา สถานที่ หรือจำนวนคน</p>
             </div>
           </div>
           <button
@@ -529,15 +587,22 @@ export const EditRoomModal: React.FC = () => {
           </div>
 
           {/* 4. Tags Matrix */}
-          <div className="space-y-2 bg-white/40 backdrop-blur-xs p-3.5 rounded-2xl border border-white/70 shadow-2xs">
+          <div className="space-y-2.5 bg-white/40 backdrop-blur-xs p-3.5 rounded-2xl border border-white/70 shadow-2xs">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-[#8B1D1D] font-kanit flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" /> แท็กกิจกรรม (Tags)
+                <Tag className="w-3.5 h-3.5" /> แท็กกิจกรรม
               </label>
-              <span className="text-[10px] text-[#777]">เลือกหรือพิมพ์แท็กเพิ่มได้</span>
+              {isLoadingSupabase ? (
+                <span className="text-[11px] text-[#888] flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin text-[#8B1D1D]" />
+                  กำลังโหลดแท็ก...
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#777]">เลือกได้ 1 แท็กสำหรับหมวดหมู่นี้</span>
+              )}
             </div>
 
-            {/* Currently chosen tags */}
+            {/* Currently chosen tag */}
             <div className="flex items-center gap-1.5 flex-wrap min-h-[30px]">
               {tags.map((t, idx) => (
                 <span
@@ -556,58 +621,39 @@ export const EditRoomModal: React.FC = () => {
                 </span>
               ))}
               {tags.length === 0 && (
-                <span className="text-xs text-[#888] italic">ยังไม่มีแท็กที่เลือก</span>
+                <span className="text-xs text-[#888] italic">ยังไม่ได้เลือกแท็ก (กดเลือก 1 แท็กด้านล่าง)</span>
               )}
             </div>
 
-            {/* Recommendations & Quick Pick */}
+            {/* Tag choices strictly matching category_id */}
             <div>
-              <p className="text-[11px] font-semibold text-[#555] mb-1.5">แนะนำสำหรับหมวดนี้:</p>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {availableTags.map((tagText, idx) => {
-                  const isSelected = tags.includes(tagText);
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleToggleTag(tagText)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all cursor-pointer border ${
-                        isSelected
-                          ? 'bg-[#8B1D1D] text-white border-[#8B1D1D] shadow-2xs'
-                          : 'bg-white/70 hover:bg-white text-[#555] border-white/80 hover:border-stone-300'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-2.5 h-2.5 inline mr-1" />}
-                      {tagText}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Custom Tag Input */}
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="text"
-                value={customTagInput}
-                onChange={(e) => setCustomTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddCustomTag();
-                  }
-                }}
-                placeholder="เพิ่มแท็กเอง เช่น #หอพักTU #เด็ก67"
-                className="flex-1 bg-white/70 border border-white/80 rounded-xl px-3 py-1.5 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#8B1D1D]"
-              />
-              <button
-                type="button"
-                onClick={() => handleAddCustomTag()}
-                className="px-3 py-1.5 bg-white/80 hover:bg-white border border-white/90 text-xs font-bold text-[#8B1D1D] rounded-xl shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>เพิ่ม</span>
-              </button>
+              <p className="text-[11px] font-semibold text-[#555] mb-1.5">
+                ตัวเลือกแท็กเฉพาะตามหมวดหมู่นี้ ({categoryOptions.find((c) => c.id === selectedCategoryId)?.nameTh || 'หมวดหมู่'}):
+              </p>
+              {availableTags.length === 0 ? (
+                <p className="text-xs text-[#888] italic py-1">ไม่พบแท็กสำหรับหมวดหมู่นี้</p>
+              ) : (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {availableTags.map((tagText, idx) => {
+                    const isSelected = tags.includes(tagText);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleToggleTag(tagText)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-[#8B1D1D] text-white border-[#8B1D1D] shadow-2xs font-semibold scale-[1.02]'
+                            : 'bg-white/80 hover:bg-white text-[#555] border-white/90 hover:border-[#8B1D1D]/30'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 inline mr-1" />}
+                        {tagText}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -669,99 +715,144 @@ export const EditRoomModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 6. Location & Campus */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Campus Selector */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-[#2D2D2D] font-kanit flex items-center gap-1">
-                <Building className="w-3.5 h-3.5 text-[#8B1D1D]" />
-                <span>ศูนย์การศึกษา</span>
+          {/* วันและเวลาปิดรับสมัคร (ปิดบอร์ด) */}
+          <div className="p-3.5 bg-amber-50/60 backdrop-blur-xs rounded-2xl border border-amber-200/80 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <label className="text-xs font-bold text-[#8B1D1D] flex items-center gap-1.5 font-kanit">
+                <Clock className="w-3.5 h-3.5 text-[#8B1D1D]" />
+                <span>วันและเวลาปิดรับสมัคร (ปิดบอร์ด) <span className="text-rose-500">*</span></span>
               </label>
-              <select
-                value={campus}
-                onChange={(e) => setCampus(e.target.value)}
-                className="w-full bg-white/70 backdrop-blur-xs border border-white/80 rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] font-medium focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#8B1D1D] transition-all cursor-pointer"
-              >
-                {CAMPUS_OPTIONS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              <span className="text-[10px] text-amber-900/80 font-medium">⚠️ ห้ามเกินเวลา ณ กิจกรรมเริ่ม</span>
             </div>
 
-            {/* Location input */}
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-[#2D2D2D] font-kanit flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-[#8B1D1D]" />
-                <span>สถานที่นัดพบ</span>
-                <span className="text-[#8B1D1D]">*</span>
-              </label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => {
-                  setLocation(e.target.value);
-                  if (errors.location) setErrors((prev) => ({ ...prev, location: undefined }));
-                }}
-                placeholder="เช่น โรงยิม 4, หอสมุดป๋วย, ยูสแควร์"
-                className={`w-full bg-white/70 backdrop-blur-xs border rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] font-medium focus:outline-none focus:bg-white focus:ring-2 transition-all ${
-                  errors.location
-                    ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
-                    : 'border-white/80 focus:ring-[#8B1D1D]'
-                }`}
-              />
-              {errors.location && (
-                <p className="text-[11px] text-rose-600 flex items-center gap-1 font-medium">
-                  <AlertCircle className="w-3 h-3" /> {errors.location}
-                </p>
-              )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-[#555]">
+                  วันที่ปิดรับสมัคร
+                </label>
+                <input
+                  type="date"
+                  max={activityDate || undefined}
+                  value={recruitmentDeadlineDate}
+                  disabled={isSubmitting}
+                  onChange={(e) => {
+                    setRecruitmentDeadlineDate(e.target.value);
+                    if (errors.recruitmentDeadlineDate) {
+                      setErrors((prev) => ({ ...prev, recruitmentDeadlineDate: undefined }));
+                    }
+                  }}
+                  className={`w-full bg-white/70 backdrop-blur-xs border rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] font-medium focus:outline-none focus:bg-white focus:ring-2 transition-all ${
+                    errors.recruitmentDeadlineDate
+                      ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
+                      : 'border-white/80 focus:ring-[#8B1D1D]'
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-medium text-[#555]">
+                  เวลาปิดรับสมัคร
+                </label>
+                <input
+                  type="time"
+                  value={recruitmentDeadlineTime}
+                  disabled={isSubmitting}
+                  onChange={(e) => {
+                    setRecruitmentDeadlineTime(e.target.value);
+                    if (errors.recruitmentDeadlineTime) {
+                      setErrors((prev) => ({ ...prev, recruitmentDeadlineTime: undefined }));
+                    }
+                  }}
+                  className={`w-full bg-white/70 backdrop-blur-xs border rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] font-medium focus:outline-none focus:bg-white focus:ring-2 transition-all ${
+                    errors.recruitmentDeadlineTime
+                      ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
+                      : 'border-white/80 focus:ring-[#8B1D1D]'
+                  }`}
+                />
+              </div>
             </div>
+
+            {(errors.recruitmentDeadlineDate || errors.recruitmentDeadlineTime) && (
+              <p className="text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                <AlertCircle className="w-3 h-3" /> {errors.recruitmentDeadlineDate || errors.recruitmentDeadlineTime}
+              </p>
+            )}
+          </div>
+
+          {/* 6. Location */}
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-[#2D2D2D] font-kanit flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-[#8B1D1D]" />
+              <span>สถานที่นัดพบ</span>
+              <span className="text-[#8B1D1D]">*</span>
+            </label>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                if (errors.location) setErrors((prev) => ({ ...prev, location: undefined }));
+              }}
+              placeholder="เช่น โรงยิม 4, หอสมุดป๋วย, ยูสแควร์"
+              className={`w-full bg-white/70 backdrop-blur-xs border rounded-2xl px-3.5 py-2 text-xs text-[#2D2D2D] font-medium focus:outline-none focus:bg-white focus:ring-2 transition-all ${
+                errors.location
+                  ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
+                  : 'border-white/80 focus:ring-[#8B1D1D]'
+              }`}
+            />
+            {errors.location && (
+              <p className="text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                <AlertCircle className="w-3 h-3" /> {errors.location}
+              </p>
+            )}
           </div>
 
           {/* 7. Max Participants */}
-          <div className="space-y-1 bg-white/40 backdrop-blur-xs p-3.5 rounded-2xl border border-white/70 shadow-2xs">
+          <div className="space-y-1.5 bg-white/40 backdrop-blur-xs p-3.5 rounded-2xl border border-white/70 shadow-2xs">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-[#2D2D2D] font-kanit flex items-center gap-1">
                 <Users className="w-3.5 h-3.5 text-[#8B1D1D]" />
-                <span>จำนวนคนที่เปิดรับรวม (Max Participants)</span>
+                <span>จำนวนคนที่เปิดรับรวม</span>
                 <span className="text-[#8B1D1D]">*</span>
               </label>
               <span className="text-xs font-bold text-[#8B1D1D]">{maxParticipants} คน</span>
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <input
-                type="range"
-                min={Math.max(2, currentParticipantsCount)}
-                max={30}
-                value={maxParticipants}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setMaxParticipants(val);
-                  if (errors.maxParticipants) setErrors((prev) => ({ ...prev, maxParticipants: undefined }));
-                }}
-                className="flex-1 accent-[#8B1D1D] cursor-pointer"
-              />
+            <div className="flex items-center gap-2 pt-1">
               <input
                 type="number"
                 min={Math.max(2, currentParticipantsCount)}
-                max={50}
-                value={maxParticipants}
+                max={100}
+                value={maxParticipants || ''}
                 onChange={(e) => {
                   const val = Number(e.target.value);
                   setMaxParticipants(val);
-                  if (errors.maxParticipants) setErrors((prev) => ({ ...prev, maxParticipants: undefined }));
+                  if (val > 100) {
+                    setErrors((prev) => ({ ...prev, maxParticipants: 'สามารถเปิดรับได้สูงสุดไม่เกิน 100 คน' }));
+                  } else if (val < currentParticipantsCount) {
+                    setErrors((prev) => ({
+                      ...prev,
+                      maxParticipants: `มีสมาชิกเข้าร่วมแล้ว ${currentParticipantsCount} คน ไม่สามารถตั้งค่าน้อยกว่า ${currentParticipantsCount} ได้`,
+                    }));
+                  } else {
+                    if (errors.maxParticipants) setErrors((prev) => ({ ...prev, maxParticipants: undefined }));
+                  }
                 }}
-                className="w-16 bg-white/80 border border-white/90 rounded-xl px-2 py-1 text-xs text-center font-bold text-[#2D2D2D] focus:outline-none focus:ring-1 focus:ring-[#8B1D1D]"
+                className={`w-28 bg-white/80 border rounded-xl px-3 py-2 text-xs sm:text-sm text-center font-bold text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 transition-all ${
+                  errors.maxParticipants || maxParticipants > 100
+                    ? 'border-rose-300 focus:ring-rose-500 bg-rose-50/30'
+                    : 'border-white/90 focus:ring-[#8B1D1D]'
+                }`}
               />
+              <span className="text-xs text-[#555] font-medium">คน</span>
             </div>
-            <p className="text-[11px] text-[#777]">
-              ปัจจุบันมีผู้เข้าร่วม {currentParticipantsCount} คน (รวมผู้สร้าง) • สามารถเปิดรับได้สูงสุด 50 คน
-            </p>
-            {errors.maxParticipants && (
+
+            {(maxParticipants > 100 || errors.maxParticipants) && (
               <p className="text-[11px] text-rose-600 flex items-center gap-1 font-medium pt-1">
-                <AlertCircle className="w-3 h-3" /> {errors.maxParticipants}
+                <AlertCircle className="w-3 h-3" />
+                {maxParticipants > 100
+                  ? 'สามารถเปิดรับได้สูงสุดไม่เกิน 100 คน'
+                  : errors.maxParticipants}
               </p>
             )}
           </div>

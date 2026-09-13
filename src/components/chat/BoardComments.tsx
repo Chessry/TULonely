@@ -301,9 +301,6 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
             <h3 className="text-base sm:text-lg font-bold text-[#2D2D2D] font-kanit">
               Talky
             </h3>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#8B1D1D]/10 text-[#8B1D1D] border border-[#8B1D1D]/20">
-              {allComments.length}
-            </span>
           </div>
         </div>
       </div>

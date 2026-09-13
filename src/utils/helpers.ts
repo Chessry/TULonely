@@ -4,7 +4,14 @@ export function calculateRoomStatus(room: {
   participants: any[];
   maxParticipants: number;
   recruitmentDeadline: string;
+  isPaused?: boolean;
+  isClosed?: boolean;
+  status?: RoomStatus;
 }): RoomStatus {
+  if (room.isPaused || room.isClosed || room.status === 'closed') {
+    return 'closed';
+  }
+
   const now = new Date().getTime();
   const deadline = new Date(room.recruitmentDeadline).getTime();
 
@@ -113,6 +120,14 @@ export function getStatusDetails(status: RoomStatus): {
         badgeText: 'text-stone-600',
         dotColor: 'bg-stone-400',
         icon: '⚪'
+      };
+    case 'closed':
+      return {
+        label: 'พักรับสมาชิก',
+        badgeBg: 'bg-amber-50 text-amber-800 border-amber-300',
+        badgeText: 'text-amber-800',
+        dotColor: 'bg-amber-500',
+        icon: '⏸️'
       };
   }
 }
