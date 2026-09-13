@@ -321,8 +321,8 @@ export const CreateRoomModal: React.FC = () => {
     // 3. Max Participants
     if (!maxParticipants || isNaN(maxParticipants) || maxParticipants < 2) {
       newErrors.maxParticipants = 'จำนวนเพื่อนต้องอย่างน้อย 2 คน';
-    } else if (maxParticipants > 50) {
-      newErrors.maxParticipants = 'จำนวนเพื่อนต้องไม่เกิน 50 คน';
+    } else if (maxParticipants > 100) {
+      newErrors.maxParticipants = 'จำนวนเพื่อนต้องไม่เกิน 100 คน';
     }
 
     // 4. Activity Date & Time validation (event_date_time)
@@ -459,8 +459,7 @@ export const CreateRoomModal: React.FC = () => {
         activityDate,
         activityTime,
         recruitmentDeadline: calculatedDeadlineIso,
-        recruitmentOption: 'hours',
-        recruitmentHours: 12,
+        recruitmentOption: 'custom',
         location: location.trim(),
         campus,
         maxParticipant: Math.max(2, maxParticipants),
@@ -489,7 +488,7 @@ export const CreateRoomModal: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">✨</span>
             <div>
-              <h2 className="text-xl font-bold font-kanit">สร้างห้องหาเพื่อนใหม่ (Create Room)</h2>
+              <h2 className="text-xl font-bold font-kanit">Create Room</h2>
               <p className="text-xs text-white/80">
                 ตั้งห้องเพื่อชวนเพื่อนนักศึกษา มธ. ไปทำกิจกรรมด้วยกัน (กด Esc เพื่อปิด)
               </p>
@@ -634,8 +633,12 @@ export const CreateRoomModal: React.FC = () => {
                 value={activityDate}
                 disabled={isSubmitting}
                 onChange={(e) => {
-                  setActivityDate(e.target.value);
+                  const newActDate = e.target.value;
+                  setActivityDate(newActDate);
                   if (errors.activityDate) setErrors((prev) => ({ ...prev, activityDate: undefined }));
+                  if (recruitmentDeadlineDate && newActDate && recruitmentDeadlineDate > newActDate) {
+                    setRecruitmentDeadlineDate(newActDate);
+                  }
                 }}
                 className={`w-full bg-white/60 backdrop-blur-sm border rounded-xl px-3 py-2 text-xs text-[#2D2D2D] focus:outline-none focus:bg-white focus:ring-2 transition-colors ${errors.activityDate
                     ? 'border-rose-400 bg-rose-50/20 focus:ring-rose-400'
@@ -686,7 +689,7 @@ export const CreateRoomModal: React.FC = () => {
               <input
                 type="number"
                 min={2}
-                max={50}
+                max={100}
                 value={maxParticipants}
                 disabled={isSubmitting}
                 onChange={(e) => {
@@ -801,16 +804,6 @@ export const CreateRoomModal: React.FC = () => {
             )}
           </div>
 
-          {/* Automatic 12-Hour Deadline Notice (Fixed 12 hrs) */}
-          <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[#8B1D1D]">
-            <Clock className="w-4 h-4 shrink-0 text-[#8B1D1D]" />
-            <div className="text-xs">
-              <span className="font-bold">ระยะเวลาเปิดรับสมาชิก: </span>
-              <span className="text-[#555]">
-                ระบบกำหนดเวลาปิดรับสมาชิกอัตโนมัติ <strong>12 ชั่วโมง</strong> สำหรับทุกการสร้างห้อง
-              </span>
-            </div>
-          </div>
 
           {/* Tags Dropdown ("แท็กกิจกรรม" from category_items excluding category_id == 2) */}
           {selectedCategoryId !== 2 && category !== 'activity' && category !== 'university' && (
