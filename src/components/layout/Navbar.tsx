@@ -12,7 +12,6 @@ export const Navbar: React.FC = () => {
     setIsNotifDrawerOpen,
     currentUser,
     isLoggedIn,
-    setIsAuthModalOpen,
     openCreateRoomFlow,
     setSelectedCategory,
     setSelectedActivityId,
@@ -316,9 +315,13 @@ export const Navbar: React.FC = () => {
           {/* User Profile Avatar / Switcher or Login Button */}
           {isLoggedIn ? (
             <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full bg-white/60 hover:bg-white/90 backdrop-blur-md border border-white/70 shadow-xs hover:border-[#8B1D1D]/40 text-left transition-all cursor-pointer shrink-0"
-              title="โปรไฟล์และสลับบัญชีนักศึกษา"
+              onClick={() => setActivePage('profile')}
+              className={`flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full backdrop-blur-md border shadow-xs transition-all cursor-pointer shrink-0 ${
+                activePage === 'profile'
+                  ? 'bg-white border-[#8B1D1D] ring-2 ring-[#8B1D1D]/20 shadow-sm'
+                  : 'bg-white/60 hover:bg-white/90 border-white/70 hover:border-[#8B1D1D]/40'
+              }`}
+              title="โปรไฟล์ของฉัน"
             >
               <img
                 src={currentUser.avatar}
