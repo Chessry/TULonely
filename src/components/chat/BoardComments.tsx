@@ -225,7 +225,17 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
       const parsed = Number(c.id.replace('comment-', ''));
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
-    // 4. Fallback: msg- timestamp
+    // 4. Check sys-leave- timestamp
+    if (c.id.startsWith('sys-leave-')) {
+      const parsed = Number(c.id.replace('sys-leave-', ''));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    // 5. Check sys- timestamp
+    if (c.id.startsWith('sys-')) {
+      const parsed = Number(c.id.replace('sys-', ''));
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    // 6. Fallback: msg- timestamp
     if (c.id.startsWith('msg-')) {
       const parsed = Number(c.id.replace('msg-', ''));
       if (!isNaN(parsed) && parsed > 0) return parsed;
@@ -410,6 +420,13 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
           topLevelComments.map((comment) => {
             const isMine = isLoggedIn && currentUser && comment.senderId === currentUser.id;
             const isHost = comment.senderId === hostId;
+            const isSystemNotification =
+              comment.isSystem ||
+              comment.senderId === 'system' ||
+              comment.text.includes('ได้เข้าร่วม') ||
+              comment.text.includes('ได้ออกจาก');
+            const isLeave = comment.text.includes('ออกจาก');
+            const isJoin = !isLeave;
             const replies = (repliesMap.get(comment.id) || []).sort(
               (a, b) => getCommentTime(a) - getCommentTime(b)
             );
@@ -418,7 +435,11 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
               <div
                 key={comment.id}
                 className={`p-4 rounded-2xl border transition-all duration-150 space-y-3 ${
-                  isHost
+                  isSystemNotification
+                    ? isLeave
+                      ? 'bg-stone-50/75 border-stone-200/90 shadow-2xs'
+                      : 'bg-emerald-50/60 border-emerald-200/80 shadow-2xs'
+                    : isHost
                     ? 'bg-amber-50/70 border-amber-200/80 shadow-sm'
                     : isMine
                     ? 'bg-white/80 border-[#8B1D1D]/20 shadow-sm'
@@ -431,7 +452,9 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                     <img
                       src={
                         comment.senderAvatar ||
-                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
+                        (isLeave
+                          ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'
+                          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100')
                       }
                       alt={comment.senderName}
                       className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-2xs"
@@ -442,12 +465,22 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                           {comment.senderName}
                         </span>
 
-                        {isHost && (
+                        {isSystemNotification ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold border shadow-2xs ${
+                              isLeave
+                                ? 'bg-stone-200/70 text-stone-700 border-stone-300'
+                                : 'bg-emerald-200/80 text-emerald-800 border-emerald-300'
+                            }`}
+                          >
+                            <span>{isLeave ? '👋 ออกจากบอร์ด' : '🎉 เข้าร่วมบอร์ด'}</span>
+                          </span>
+                        ) : isHost ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-200/90 text-amber-900 border border-amber-300 shadow-2xs">
                             <Crown className="w-3 h-3 text-amber-700" />
                             <span>ผู้สร้างบอร์ด</span>
                           </span>
-                        )}
+                        ) : null}
 
                         {comment.senderFaculty && (
                           <span className="text-[10px] text-[#777] bg-white/70 px-2 py-0.2 rounded-full border border-white/80">
@@ -464,42 +497,44 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
 
                   {/* Top Right Actions: Edit & Delete (author only) or Report (others) */}
                   <div className="flex items-center gap-1">
-                    {isMine ? (
-                      <div className="flex items-center gap-0.5">
+                    {!isSystemNotification && (
+                      isMine ? (
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(comment)}
+                            className="p-1 text-stone-400 hover:text-amber-700 transition-colors cursor-pointer rounded-lg hover:bg-amber-50"
+                            title="แก้ไขความคิดเห็นของคุณ"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteComment(comment.id)}
+                            className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
+                            title="ลบความคิดเห็นของคุณ"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
                         <button
-                          type="button"
-                          onClick={() => handleStartEdit(comment)}
-                          className="p-1 text-stone-400 hover:text-amber-700 transition-colors cursor-pointer rounded-lg hover:bg-amber-50"
-                          title="แก้ไขความคิดเห็นของคุณ"
+                          onClick={() => {
+                            setReportTarget({
+                              targetType: 'message',
+                              targetId: comment.id,
+                              targetTitle: `ความคิดเห็นจาก ${comment.senderName}: "${comment.text}"`,
+                              reason: 'harassment',
+                              details: '',
+                            });
+                            setIsReportModalOpen(true);
+                          }}
+                          className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
+                          title="รายงานความคิดเห็นนี้"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
+                          <ShieldAlert className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="p-1 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
-                          title="ลบความคิดเห็นของคุณ"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          setReportTarget({
-                            targetType: 'message',
-                            targetId: comment.id,
-                            targetTitle: `ความคิดเห็นจาก ${comment.senderName}: "${comment.text}"`,
-                            reason: 'harassment',
-                            details: '',
-                          });
-                          setIsReportModalOpen(true);
-                        }}
-                        className="p-1 text-[#999] hover:text-rose-600 transition-colors cursor-pointer rounded-full hover:bg-white/60"
-                        title="รายงานความคิดเห็นนี้"
-                      >
-                        <ShieldAlert className="w-3.5 h-3.5" />
-                      </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -547,27 +582,29 @@ export const BoardComments: React.FC<BoardCommentsProps> = ({ room }) => {
                 )}
 
                 {/* Actions Row (Removed Like button, Edit & Reply only) */}
-                <div className="pt-1 flex items-center gap-3 text-xs font-semibold text-[#666]">
-                  {isMine && editingCommentId !== comment.id && (
+                {!isSystemNotification && (
+                  <div className="pt-1 flex items-center gap-3 text-xs font-semibold text-[#666]">
+                    {isMine && editingCommentId !== comment.id && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(comment)}
+                        className="inline-flex items-center gap-1 text-stone-500 hover:text-amber-700 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>แก้ไข</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => handleStartEdit(comment)}
-                      className="inline-flex items-center gap-1 text-stone-500 hover:text-amber-700 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
+                      onClick={() => handleStartReply(comment)}
+                      className="inline-flex items-center gap-1.5 hover:text-[#8B1D1D] text-stone-600 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
                     >
-                      <Edit3 className="w-3 h-3" />
-                      <span>แก้ไข</span>
+                      <CornerDownRight className="w-3.5 h-3.5" />
+                      <span>ตอบกลับ</span>
                     </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => handleStartReply(comment)}
-                    className="inline-flex items-center gap-1.5 hover:text-[#8B1D1D] text-stone-600 transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-white/60"
-                  >
-                    <CornerDownRight className="w-3.5 h-3.5" />
-                    <span>ตอบกลับ</span>
-                  </button>
-                </div>
+                  </div>
+                )}
 
                 {/* Nested Replies Section: Rendered directly INSIDE the parent comment */}
                 {replies.length > 0 && (

@@ -739,13 +739,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pMap.set(newParticipant.id, newParticipant);
     const updatedParticipants = Array.from(pMap.values());
 
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const formattedTime =
+      now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+
     const joinSystemMessage: ChatMessage = {
       id: `sys-${Date.now()}`,
-      senderId: 'system',
-      senderName: 'ระบบ TUlonely',
-      senderAvatar: '',
-      text: `🎉 ${currentUser.name} (${currentUser.faculty}) ได้เข้าร่วมห้องแล้ว!`,
-      timestamp: 'เมื่อสักครู่',
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatar,
+      senderFaculty: currentUser.faculty,
+      text: `🎉 ${currentUser.name} (${currentUser.faculty}) ได้เข้าร่วมบอร์ดแล้ว!`,
+      timestamp: formattedTime,
+      createdAt: nowIso,
       isSystem: true,
     };
 
@@ -808,13 +815,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const updatedParticipants = room.participants.filter((p) => p.id !== currentUser.id);
 
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const formattedTime =
+      now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+
     const leaveMessage: ChatMessage = {
       id: `sys-leave-${Date.now()}`,
-      senderId: 'system',
-      senderName: 'ระบบ TUlonely',
-      senderAvatar: '',
-      text: `👋 ${currentUser.name} ได้ออกจากห้อง`,
-      timestamp: 'เมื่อสักครู่',
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatar,
+      senderFaculty: currentUser.faculty,
+      text: `👋 ${currentUser.name} ได้ออกจากบอร์ด`,
+      timestamp: formattedTime,
+      createdAt: nowIso,
       isSystem: true,
     };
 

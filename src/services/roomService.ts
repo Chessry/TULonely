@@ -1097,13 +1097,20 @@ export const roomService = {
       isHost: false,
     };
 
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const formattedTime =
+      now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+
     const joinSystemMessage: ChatMessage = {
       id: `sys-${Date.now()}`,
-      senderId: 'system',
-      senderName: 'ระบบ TUlonely',
-      senderAvatar: '',
-      text: `🎉 ${user.name} (${user.faculty}) ได้เข้าร่วมห้องแล้ว!`,
-      timestamp: 'เมื่อสักครู่',
+      senderId: user.id,
+      senderName: user.name,
+      senderAvatar: user.avatar,
+      senderFaculty: user.faculty,
+      text: `🎉 ${user.name} (${user.faculty}) ได้เข้าร่วมบอร์ดแล้ว!`,
+      timestamp: formattedTime,
+      createdAt: nowIso,
       isSystem: true,
     };
 
@@ -1165,6 +1172,16 @@ export const roomService = {
                     user_id: authUserId,
                   });
               }
+
+              await supabase
+                .from('comments')
+                .insert({
+                  board_id: boardIdNum,
+                  user_id: authUserId,
+                  content: `🎉 ${user.name} (${user.faculty}) ได้เข้าร่วมบอร์ดแล้ว!`,
+                  parent_id: null,
+                  is_updated: false,
+                });
             }
           }
         } catch (sbErr) {
@@ -1196,15 +1213,23 @@ export const roomService = {
     if (roomIndex === -1) return null;
 
     const room = rooms[roomIndex];
+    const leavingParticipant = room.participants.find((p) => p.id === userId);
     const updatedParticipants = room.participants.filter((p) => p.id !== userId);
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const formattedTime =
+      now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
 
     const leaveMessage: ChatMessage = {
       id: `sys-leave-${Date.now()}`,
-      senderId: 'system',
-      senderName: 'ระบบ TUlonely',
-      senderAvatar: '',
-      text: `👋 ${userName} ได้ออกจากห้อง`,
-      timestamp: 'เมื่อสักครู่',
+      senderId: userId,
+      senderName: userName || leavingParticipant?.name || 'เพื่อนร่วมห้อง',
+      senderAvatar: leavingParticipant?.avatar || '',
+      senderFaculty: leavingParticipant?.faculty,
+      text: `👋 ${userName || leavingParticipant?.name || 'เพื่อนร่วมห้อง'} ได้ออกจากบอร์ด`,
+      timestamp: formattedTime,
+      createdAt: nowIso,
       isSystem: true,
     };
 
@@ -1248,6 +1273,18 @@ export const roomService = {
               .from('participants')
               .delete()
               .match({ board_id: boardIdNum, user_id: userId });
+
+            if (userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+              await supabase
+                .from('comments')
+                .insert({
+                  board_id: boardIdNum,
+                  user_id: userId,
+                  content: `👋 ${userName} ได้ออกจากบอร์ด`,
+                  parent_id: null,
+                  is_updated: false,
+                });
+            }
           }
         } catch (err) {
           console.warn('[roomService] Supabase leaveRoom sync note:', err);
