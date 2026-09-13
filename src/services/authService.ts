@@ -614,7 +614,14 @@ export const authService = {
     }
 
     if (isSupabaseConfigured) {
-      const redirectTo = `${window.location.origin}/reset-password`;
+      // Support VITE_SITE_URL / VITE_PUBLIC_URL if deployed or testing via network IP/tunnel,
+      // falling back to current browser origin (localhost:3000 during local dev).
+      const envSiteUrl =
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUBLIC_URL);
+      const baseUrl = (envSiteUrl || window.location.origin).replace(/\/$/, '');
+      const redirectTo = `${baseUrl}/reset-password`;
+
       const { error } = await supabase.auth.resetPasswordForEmail(cleanedEmail, {
         redirectTo,
       });

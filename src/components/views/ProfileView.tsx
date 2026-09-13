@@ -546,14 +546,6 @@ export const ProfileView: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setIsAuthModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/70 hover:bg-white backdrop-blur-md text-[#333] border border-white/80 text-xs font-bold shadow-xs transition-all cursor-pointer"
-              title="สลับหรือจัดการบัญชี"
-            >
-              <span>สลับบัญชี</span>
-            </button>
-
-            <button
               onClick={logout}
               className="p-2 rounded-full bg-rose-50/80 hover:bg-rose-100 backdrop-blur-xs border border-rose-200 text-rose-600 shadow-xs transition-colors cursor-pointer"
               title="ออกจากระบบ"
