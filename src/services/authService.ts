@@ -133,6 +133,50 @@ const buildProfileFromSupabaseUser = (sbUser: { id: string; email?: string; user
 };
 
 /**
+ * Resolves the canonical base URL for auth redirects.
+ * Prevents Vercel preview URLs (e.g. tulonely-xxxx-p2v8g.vercel.app)
+ * from being baked into reset password emails, which causes "404 DEPLOYMENT_NOT_FOUND"
+ * when preview deployments expire or get pruned.
+ */
+export const resolveCanonicalBaseUrl = (): string => {
+  if (typeof window === 'undefined') return '';
+
+  const origin = window.location.origin;
+  const hostname = window.location.hostname;
+
+  // 1. If running on localhost / local IP, use origin directly
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.startsWith('192.168.') ||
+    hostname.startsWith('10.')
+  ) {
+    return origin;
+  }
+
+  // 2. If explicit production site URL is configured in environment, prefer it
+  const envSiteUrl =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUBLIC_URL);
+
+  if (envSiteUrl && !envSiteUrl.includes('localhost') && !envSiteUrl.includes('your-project-ref')) {
+    return envSiteUrl.trim().replace(/\/+$/, '');
+  }
+
+  // 3. If on Vercel preview domain (e.g. tulonely-p2v8g-xxx.vercel.app or tulonely-git-main-xxx.vercel.app)
+  // Strip out preview hashes and git branch prefixes to get the stable production domain (e.g. https://tulonely.vercel.app)
+  if (hostname.endsWith('.vercel.app')) {
+    const subDomain = hostname.replace(/\.vercel\.app$/, '');
+    if (subDomain.includes('-')) {
+      const rootProject = subDomain.split('-')[0]; // e.g. "tulonely"
+      return `https://${rootProject}.vercel.app`;
+    }
+  }
+
+  return origin;
+};
+
+/**
  * Authentication Service with Supabase Auth & Local Fallback
  */
 export const authService = {
@@ -615,12 +659,7 @@ export const authService = {
 
     if (isSupabaseConfigured) {
       try {
-        // Support VITE_SITE_URL / VITE_PUBLIC_URL if deployed or testing via network IP/tunnel,
-        // falling back to current browser origin (localhost:3000 during local dev).
-        const envSiteUrl =
-          (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
-          (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUBLIC_URL);
-        const baseUrl = (envSiteUrl || window.location.origin).replace(/\/$/, '');
+        const baseUrl = resolveCanonicalBaseUrl().replace(/\/$/, '');
         const redirectTo = `${baseUrl}/reset-password`;
 
         const { error } = await supabase.auth.resetPasswordForEmail(cleanedEmail, {
