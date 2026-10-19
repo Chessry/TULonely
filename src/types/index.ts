@@ -111,19 +111,40 @@ export interface UserProfile {
 
 export interface NotificationItem {
   id: string;
-  type: 'join' | 'leave' | 'chat' | 'almost_full' | 'deadline' | 'activity_soon' | 'new_match';
+  type:
+    | 'join'
+    | 'leave'
+    | 'chat'
+    | 'almost_full'
+    | 'board_full'
+    | 'deadline'
+    | 'activity_soon'
+    | 'new_match'
+    | 'tag_match'
+    | 'board_updated'
+    | 'system';
   title: string;
   description: string;
   time: string;
   read: boolean;
   targetRoomId?: string;
   targetActivityId?: string;
+  tag?: string;
+  category?: 'host' | 'interest' | 'system' | 'general';
+  createdAt?: string;
 }
 
+export type ReportTargetType = 'user' | 'activity' | 'room' | 'board' | 'message';
+
 export interface ReportPayload {
-  targetType: 'user' | 'activity' | 'room' | 'message';
+  targetType: ReportTargetType;
   targetId: string;
   targetTitle: string;
-  reason: 'spam' | 'harassment' | 'inappropriate' | 'fake' | 'other';
+  targetSubtitle?: string;
+  targetAvatar?: string;
+  reason: string;
   details: string;
+  reporterId?: string;
+  reporterName?: string;
+  createdAt?: string;
 }

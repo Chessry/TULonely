@@ -131,6 +131,7 @@ export const RoomDetailView: React.FC = () => {
       targetType: 'room',
       targetId: room.id,
       targetTitle: room.title,
+      targetSubtitle: `${categoryMeta.name} • ${room.location} (${room.campus})`,
       reason: 'spam',
       details: '',
     });
@@ -505,6 +506,27 @@ export const RoomDetailView: React.FC = () => {
                       <p className="text-[11px] text-[#666] truncate font-medium">{p.faculty}</p>
                       <p className="text-[10px] text-[#888]">{maskStudentId(p.studentId)}</p>
                     </div>
+                    {!isCurrent && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportTarget({
+                            targetType: 'user',
+                            targetId: p.id,
+                            targetTitle: p.name,
+                            targetSubtitle: `${p.faculty} • ${maskStudentId(p.studentId)}`,
+                            targetAvatar: p.avatar,
+                            reason: 'harassment',
+                            details: '',
+                          });
+                          setIsReportModalOpen(true);
+                        }}
+                        className="opacity-40 hover:opacity-100 p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-all cursor-pointer shrink-0"
+                        title={`รายงานผู้ใช้ ${p.name}`}
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 );
               })}

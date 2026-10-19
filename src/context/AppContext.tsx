@@ -117,6 +117,8 @@ interface AppContextType {
   updateUserProfile: (updated: Partial<UserProfile>) => void;
   markNotificationAsRead: (notifId: string) => void;
   markAllNotificationsAsRead: () => void;
+  deleteNotification: (notifId: string) => void;
+  clearAllNotifications: () => void;
   submitReport: (report: ReportPayload) => void;
 
   // Navigation helpers
@@ -594,6 +596,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setRooms((prev) => [created, ...prev.filter((r) => r.id !== created.id)]);
 
+      // Check for user interest tag match notification
+      const userInterests = currentUser.interests || [];
+      const roomTags = newRoomData.tags || [];
+      const matched = roomTags.filter((t) =>
+        userInterests.some((ui) => ui.toLowerCase().replace('#', '') === t.toLowerCase().replace('#', ''))
+      );
+
+      if (matched.length > 0) {
+        const notifTag = matched[0];
+        const newInterestNotif: NotificationItem = {
+          id: `notif-tag-${Date.now()}`,
+          type: 'tag_match',
+          category: 'interest',
+          tag: notifTag,
+          title: `มีบอร์ดใหม่ตรงแท็กที่คุณสนใจ! ✨`,
+          description: `ห้อง "${newRoomData.title}" มีแท็ก ${matched.join(', ')} ตรงกับความสนใจในโปรไฟล์ของคุณ`,
+          time: 'เมื่อสักครู่',
+          read: false,
+          targetRoomId: created.id,
+          createdAt: new Date().toISOString(),
+        };
+        setNotifications((prev) => [newInterestNotif, ...prev]);
+      }
+
       showToast('สร้างห้องสำเร็จและบันทึกข้อมูลเข้าสู่ Supabase เรียบร้อยแล้ว! 🎉');
       return created.id;
     } catch (err) {
@@ -629,6 +655,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'open',
       };
       setRooms((prev) => [fallbackRoom, ...prev]);
+
+      // Check interest tags in fallback
+      const userInterests = currentUser.interests || [];
+      const roomTags = newRoomData.tags || [];
+      const matched = roomTags.filter((t) =>
+        userInterests.some((ui) => ui.toLowerCase().replace('#', '') === t.toLowerCase().replace('#', ''))
+      );
+
+      if (matched.length > 0) {
+        const notifTag = matched[0];
+        const newInterestNotif: NotificationItem = {
+          id: `notif-tag-${Date.now()}`,
+          type: 'tag_match',
+          category: 'interest',
+          tag: notifTag,
+          title: `มีบอร์ดใหม่ตรงแท็กที่คุณสนใจ! ✨`,
+          description: `ห้อง "${newRoomData.title}" มีแท็ก ${matched.join(', ')} ตรงกับความสนใจในโปรไฟล์ของคุณ`,
+          time: 'เมื่อสักครู่',
+          read: false,
+          targetRoomId: newId,
+          createdAt: new Date().toISOString(),
+        };
+        setNotifications((prev) => [newInterestNotif, ...prev]);
+      }
+
       showToast('สร้างห้องเรียบร้อย (บันทึกข้อมูลในเครื่อง) ✨');
       return newId;
     }
@@ -796,13 +847,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const newNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
         type: 'join',
+        category: 'host',
         title: 'มีเพื่อนใหม่เข้าร่วมห้อง! 🥳',
-        description: `${currentUser.name} ได้เข้าร่วมห้อง "${room.title}"`,
+        description: `${currentUser.name} (${currentUser.faculty}) ได้เข้าร่วมห้อง "${room.title}"`,
         time: 'เมื่อสักครู่',
         read: false,
         targetRoomId: room.id,
+        createdAt: new Date().toISOString(),
       };
       setNotifications((prev) => [newNotif, ...prev]);
+    }
+
+    // Check if room became full on this join!
+    if (updatedParticipants.length >= room.maxParticipants) {
+      const fullNotif: NotificationItem = {
+        id: `notif-full-${Date.now()}`,
+        type: 'board_full',
+        category: 'host',
+        title: 'ห้องสมาชิกครบแล้ว! 🚀',
+        description: `บอร์ด "${room.title}" สมาชิกครบ ${room.maxParticipants} คนแล้ว พร้อมนัดรวมตัวกันได้เลย!`,
+        time: 'เมื่อสักครู่',
+        read: false,
+        targetRoomId: room.id,
+        createdAt: new Date().toISOString(),
+      };
+      setNotifications((prev) => [fullNotif, ...prev]);
     }
 
     showToast(`ยินดีต้อนรับเข้าสู่ห้อง "${room.title}" 🥳`);
@@ -866,6 +935,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     roomService
       .leaveRoom(room.id, currentUser.id, currentUser.name)
       .catch((err) => console.warn('[AppContext] leaveRoom service error:', err));
+
+    // Notify creator if someone left
+    if (room.creator.id !== currentUser.id) {
+      const leaveNotif: NotificationItem = {
+        id: `notif-leave-${Date.now()}`,
+        type: 'leave',
+        category: 'host',
+        title: 'สมาชิกออกจากห้อง 👋',
+        description: `${currentUser.name} ได้ออกจากห้อง "${room.title}"`,
+        time: 'เมื่อสักครู่',
+        read: false,
+        targetRoomId: room.id,
+        createdAt: new Date().toISOString(),
+      };
+      setNotifications((prev) => [leaveNotif, ...prev]);
+    }
 
     showToast('ออกจากห้องเรียบร้อยแล้ว');
   };
@@ -1082,11 +1167,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('อ่านการแจ้งเตือนทั้งหมดแล้ว');
   };
 
+  const deleteNotification = (notifId: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== notifId));
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
+    showToast('ล้างประวัติการแจ้งเตือนทั้งหมดแล้ว');
+  };
+
   const submitReport = (report: ReportPayload) => {
-    console.log('Report submitted:', report);
+    const reportRecord: ReportPayload = {
+      ...report,
+      reporterId: currentUser.id,
+      reporterName: currentUser.name,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save report to localStorage list
+    try {
+      const existingRaw = localStorage.getItem('tulonely_reports');
+      const existingReports = existingRaw ? JSON.parse(existingRaw) : [];
+      localStorage.setItem('tulonely_reports', JSON.stringify([reportRecord, ...existingReports]));
+    } catch (e) {
+      console.warn('[AppContext] save report to storage failed:', e);
+    }
+
     setIsReportModalOpen(false);
     setReportTarget(null);
-    showToast('ได้รับรายงานของคุณแล้ว ขอบคุณที่ช่วยดูแลคอมมูนิตี้ มธ. 🙏');
+    showToast('🎉 ได้รับรายงานของคุณแล้ว ขอบคุณที่ช่วยดูแลความปลอดภัยของคอมมูนิตี้ มธ. 🙏');
   };
 
   // Nav helpers
@@ -1196,6 +1305,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUserProfile,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        deleteNotification,
+        clearAllNotifications,
         submitReport,
         navigateToRoom,
         navigateToCategory,

@@ -1,13 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const rawKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+// Strip any accidental wrapping quotes and trailing slashes
+const sanitizedUrl = rawUrl.replace(/^["']|["']$/g, '').replace(/\/+$/, '');
+const sanitizedKey = rawKey.replace(/^["']|["']$/g, '');
+
+const supabaseUrl = sanitizedUrl || 'https://placeholder.supabase.co';
+const supabaseAnonKey = sanitizedKey || 'placeholder-anon-key';
 
 export const isSupabaseConfigured = Boolean(
-  import.meta.env.VITE_SUPABASE_URL &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    !import.meta.env.VITE_SUPABASE_URL.includes('your-project-ref') &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY !== 'your-anon-key-here'
+  sanitizedUrl &&
+    sanitizedKey &&
+    !sanitizedUrl.includes('your-project-ref') &&
+    sanitizedKey !== 'your-anon-key-here'
 );
 
 if (!isSupabaseConfigured) {

@@ -614,23 +614,29 @@ export const authService = {
     }
 
     if (isSupabaseConfigured) {
-      // Support VITE_SITE_URL / VITE_PUBLIC_URL if deployed or testing via network IP/tunnel,
-      // falling back to current browser origin (localhost:3000 during local dev).
-      const envSiteUrl =
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUBLIC_URL);
-      const baseUrl = (envSiteUrl || window.location.origin).replace(/\/$/, '');
-      const redirectTo = `${baseUrl}/reset-password`;
+      try {
+        // Support VITE_SITE_URL / VITE_PUBLIC_URL if deployed or testing via network IP/tunnel,
+        // falling back to current browser origin (localhost:3000 during local dev).
+        const envSiteUrl =
+          (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
+          (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUBLIC_URL);
+        const baseUrl = (envSiteUrl || window.location.origin).replace(/\/$/, '');
+        const redirectTo = `${baseUrl}/reset-password`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanedEmail, {
-        redirectTo,
-      });
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanedEmail, {
+          redirectTo,
+        });
 
-      if (error) {
-        console.warn('[authService] resetPasswordForEmail error:', error.message);
-        throw new Error(formatPasswordResetError(error.message));
+        if (error) {
+          console.warn('[authService] resetPasswordForEmail error:', error.message);
+          throw new Error(formatPasswordResetError(error.message));
+        }
+        return;
+      } catch (err: unknown) {
+        console.error('[authService] resetPasswordForEmail exception:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        throw new Error(formatPasswordResetError(errMsg));
       }
-      return;
     }
 
     // Mock fallback when offline or in mock mode
@@ -647,15 +653,21 @@ export const authService = {
     }
 
     if (isSupabaseConfigured) {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
 
-      if (error) {
-        console.warn('[authService] updateUser password error:', error.message);
-        throw new Error(formatPasswordResetError(error.message));
+        if (error) {
+          console.warn('[authService] updateUser password error:', error.message);
+          throw new Error(formatPasswordResetError(error.message));
+        }
+        return;
+      } catch (err: unknown) {
+        console.error('[authService] updateUser password exception:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        throw new Error(formatPasswordResetError(errMsg));
       }
-      return;
     }
 
     // Mock fallback
@@ -671,11 +683,19 @@ export function formatPasswordResetError(reason: string): string {
   if (!reason) return 'เกิดข้อผิดพลาดในการดำเนินการ กรุณาลองใหม่อีกครั้ง';
   const lower = reason.toLowerCase();
 
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('load failed') ||
+    lower.includes('connection refused')
+  ) {
+    return 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ Supabase ได้ (Failed to fetch) กรุณาตรวจสอบ: 1. โปรเจกต์ Supabase ถูก Pause (หลับ) อยู่หรือไม่ 2. ตรวจสอบค่า VITE_SUPABASE_URL และ VITE_SUPABASE_ANON_KEY 3. ปิด AdBlocker หรือเบราว์เซอร์บล็อกการเชื่อมต่อไปยัง Supabase';
+  }
   if (lower.includes('user not found') || lower.includes('no user found')) {
     return 'ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาตรวจสอบอีเมลอีกครั้ง';
   }
   if (lower.includes('rate limit') || lower.includes('security purposes') || lower.includes('too many requests')) {
-    return 'คุณได้ส่งคำขอบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง';
+    return 'คุณได้ส่งคำขอบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง (Supabase มีการจำกัดความถี่การส่งอีเมล)';
   }
   if (lower.includes('same password') || lower.includes('different from the old')) {
     return 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม';
