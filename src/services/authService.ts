@@ -134,9 +134,10 @@ const buildProfileFromSupabaseUser = (sbUser: { id: string; email?: string; user
 
 /**
  * Resolves the canonical base URL for auth redirects.
- * Prevents Vercel preview URLs (e.g. tulonely-xxxx-p2v8g.vercel.app)
+ * Prevents Vercel preview URLs (e.g. tu-lonely-xxxx.vercel.app)
  * from being baked into reset password emails, which causes "404 DEPLOYMENT_NOT_FOUND"
  * when preview deployments expire or get pruned.
+ * Canonical production domain: https://tu-lonely.vercel.app
  */
 export const resolveCanonicalBaseUrl = (): string => {
   if (typeof window === 'undefined') return '';
@@ -163,14 +164,10 @@ export const resolveCanonicalBaseUrl = (): string => {
     return envSiteUrl.trim().replace(/\/+$/, '');
   }
 
-  // 3. If on Vercel preview domain (e.g. tulonely-p2v8g-xxx.vercel.app or tulonely-git-main-xxx.vercel.app)
-  // Strip out preview hashes and git branch prefixes to get the stable production domain (e.g. https://tulonely.vercel.app)
+  // 3. For any Vercel domain (production or preview deployments),
+  // always resolve to the canonical production domain: https://tu-lonely.vercel.app
   if (hostname.endsWith('.vercel.app')) {
-    const subDomain = hostname.replace(/\.vercel\.app$/, '');
-    if (subDomain.includes('-')) {
-      const rootProject = subDomain.split('-')[0]; // e.g. "tulonely"
-      return `https://${rootProject}.vercel.app`;
-    }
+    return 'https://tu-lonely.vercel.app';
   }
 
   return origin;
